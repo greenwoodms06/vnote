@@ -1,0 +1,41 @@
+# --- vnote: project artifacts ---
+voice-notes/          # recorded notes (audio + transcripts + cleaned markdown)
+.testdata/notes/      # output from smoke-testing on .testdata/jfk.flac
+
+# --- secrets / local config ---
+.env
+.env.*
+!.env.example
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+*.egg
+
+# --- virtualenv / uv ---
+.venv/
+venv/
+env/
+.uv/
+
+# --- caches / tooling ---
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.cache/
+*.log
+
+# --- editors / OS ---
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+.claude/settings.local.json
+voice-notes/

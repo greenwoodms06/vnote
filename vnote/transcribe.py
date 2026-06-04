@@ -1,0 +1,96 @@
+"""Speech-to-text via faster-whisper. Uses CUDA when available, falls back to CPU."""
+
+from __future__ import annotations
+
+import ctypes
+import glob
+import os
+import sys
+from pathlib import Path
+
+from .config import WHISPER_MODEL
+
+_model = None  # lazily loaded, cached for the process
+_device = None
+
+
+def _preload_cuda_libs() -> None:
+    """dlopen the pip-installed NVIDIA libs (cuBLAS/cuDNN) so CTranslate2 finds them.
+
+    faster-whisper's backend looks these up by SONAME at inference time; when they
+    come from the ``nvidia-*-cu12`` wheels they live under ``site-packages/nvidia``
+    and aren't on the loader path. Loading them RTLD_GLOBAL here fixes that.
+    """
+    try:
+        import nvidia  # noqa: F401  (the namespace package from the wheels)
+    except ImportError:
+        return
+    for base in nvidia.__path__:  # type: ignore[attr-defined]
+        for so in sorted(glob.glob(os.path.join(base, "*", "lib", "*.so*"))):
+            try:
+                ctypes.CDLL(so, mode=ctypes.RTLD_GLOBAL)
+            except OSError:
+                pass
+
+
+def _build(device: str):
+    from faster_whisper import WhisperModel
+
+    if device == "cuda":
+        return WhisperModel(WHISPER_MODEL, device="cuda", compute_type="float16")
+    return WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
+
+
+def _is_cuda_problem(exc: BaseException) -> bool:
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return any(t in text for t in ("cuda", "cublas", "cudnn", "cudart", "nvrtc", "gpu", "device"))
+
+
+def _load_model():
+    global _model, _device
+    if _model is not None:
+        return _model
+    _preload_cuda_libs()
+    try:
+        _model = _build("cuda")
+        _device = "cuda"
+    except Exception as exc:  # noqa: BLE001
+        print(f"  (GPU init failed: {exc}; using CPU)", file=sys.stderr)
+        _model = _build("cpu")
+        _device = "cpu"
+    return _model
+
+
+def _run(model, audio_path: Path, language: str | None):
+    segments, info = model.transcribe(
+        str(audio_path),
+        language=language,
+        vad_filter=True,
+        beam_size=5,
+    )
+    text = "".join(seg.text for seg in segments).strip()  # consuming the generator runs inference
+    return text, info
+
+
+def transcribe(audio_path: Path, language: str | None = None) -> tuple[str, dict]:
+    """Transcribe ``audio_path``. Returns (text, info_dict)."""
+    global _model, _device
+    model = _load_model()
+    try:
+        text, info = _run(model, audio_path, language)
+    except Exception as exc:  # noqa: BLE001
+        if _device == "cuda" and _is_cuda_problem(exc):
+            print(f"  (GPU inference failed: {exc}; retrying on CPU)", file=sys.stderr)
+            _model = _build("cpu")
+            _device = "cpu"
+            text, info = _run(_model, audio_path, language)
+        else:
+            raise
+    meta = {
+        "whisper_model": WHISPER_MODEL,
+        "device": _device,
+        "language": info.language,
+        "language_probability": round(float(info.language_probability), 3),
+        "audio_duration_s": round(float(info.duration), 2),
+    }
+    return text, meta

@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # The unit tests cover pure logic only (parsing, slugging, config
+      # resolution, first-run gating). The heavy runtime deps — faster-whisper,
+      # sounddevice, the CUDA wheels, anthropic — are imported lazily and are not
+      # needed here, so we install just the dev tools and keep CI fast. ruff is
+      # pinned so lint results stay deterministic across releases.
+      - name: Install dev tools
+        run: python -m pip install --upgrade pip "ruff==0.15.16" pytest
+
+      - name: Lint
+        run: ruff check vnote tests
+
+      - name: Test
+        run: pytest -q
