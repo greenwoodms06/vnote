@@ -45,3 +45,6 @@ select = ["F", "E", "W", "I", "B", "UP", "C4"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Put the repo root on sys.path so tests import `vnote` straight from source —
+# no package install needed, which keeps CI from pulling the heavy runtime deps.
+pythonpath = ["."]
