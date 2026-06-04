@@ -5,11 +5,17 @@
     vnote --light / --summary  cleanup intensity (default: --edit)
     vnote --raw                transcript only, skip the LLM cleanup
     vnote --backend claude     use the optional Claude cloud backend instead of Ollama
+    vnote --redo DIR           re-run cleanup on a saved note (skips transcription)
+    vnote --doctor             check the environment; vnote --config / --setup
 """
 
 from __future__ import annotations
 
 import argparse
+import json
+import os
+import shlex
+import subprocess
 import sys
 import tempfile
 import time
@@ -18,6 +24,11 @@ from pathlib import Path
 
 from . import __version__, config, firstrun
 from .config import CLAUDE_MODEL, DEFAULT_MODE, MODES
+
+
+def _say(*args: object) -> None:
+    """Print a status/progress message to stderr (keeps stdout clean for --stdout)."""
+    print(*args, file=sys.stderr)
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -33,21 +44,144 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--model", help="override the cleanup model name")
     p.add_argument("--language", help="force transcription language (e.g. 'en'); default: auto-detect")
     p.add_argument("--no-clipboard", action="store_true", help="do not copy the result to the clipboard")
+    p.add_argument("--stdout", action="store_true", dest="to_stdout",
+                   help="also print the cleaned note to stdout (for piping)")
+    p.add_argument("-o", "--open", action="store_true", dest="open_editor",
+                   help="open the new note in $EDITOR after writing")
+    p.add_argument("--redo", metavar="PATH",
+                   help="re-run cleanup on a saved note dir or transcript.txt (no re-transcription)")
     p.add_argument("--keep-temp-audio", action="store_true",
                    help="when recording, also keep the temp wav if writing fails")
+    # Utility actions (each short-circuits the normal flow).
+    p.add_argument("--doctor", action="store_true", help="check the environment and exit")
+    p.add_argument("--config", action="store_true", dest="show_config", help="print resolved configuration and exit")
+    p.add_argument("--setup", action="store_true", help="(re-)run the interactive first-run setup and exit")
     p.add_argument("--version", action="version", version=f"vnote {__version__}")
     p.set_defaults(mode=DEFAULT_MODE)
     return p.parse_args(argv)
+
+
+def _open_in_editor(path: Path) -> None:
+    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
+    if not editor:
+        _say("  (set $EDITOR or $VISUAL to auto-open notes)")
+        return
+    try:
+        subprocess.run([*shlex.split(editor), str(path)])
+    except OSError as exc:
+        _say(f"  (could not open editor: {exc})")
+
+
+def _show_config() -> int:
+    cf = config.config_file()
+    print("vnote configuration (env VNOTE_* override the saved file):")
+    print(f"  config file : {cf} {'(exists)' if cf.exists() else '(none yet — run `vnote --setup`)'}")
+    print(f"  backend     : {config.backend()}")
+    print(f"  ollama_model: {config.ollama_model()}")
+    print(f"  claude_model: {CLAUDE_MODEL}")
+    print(f"  whisper     : {config.WHISPER_MODEL}")
+    print(f"  ollama_host : {config.OLLAMA_HOST}")
+    print(f"  notes_dir   : {config.NOTES_DIR}")
+    return 0
+
+
+# --- re-clean an existing note (no transcription) ---------------------------
+
+
+def _resolve_redo(path: Path) -> tuple[str, Path | None]:
+    """Return (transcript_text, session_dir_or_None) for a --redo target.
+
+    ``path`` may be a session directory (uses its transcript.txt) or a transcript
+    file directly. session_dir is returned only when we can write a note back.
+    """
+    path = path.expanduser()
+    if path.is_dir():
+        tx = path / "transcript.txt"
+        if not tx.is_file():
+            raise FileNotFoundError(f"no transcript.txt in {path}")
+        return tx.read_text(encoding="utf-8").strip(), path
+    if path.is_file():
+        text = path.read_text(encoding="utf-8").strip()
+        session = path.parent if path.name == "transcript.txt" and (path.parent / "meta.json").exists() else None
+        return text, session
+    raise FileNotFoundError(f"no such path: {path}")
+
+
+def _update_meta(session_dir: Path, mode: str, backend: str, model: str | None) -> None:
+    meta_path = session_dir / "meta.json"
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    meta["cleanup_mode"] = mode
+    meta["cleanup_backend"] = backend
+    meta["cleanup_model"] = model or (config.ollama_model() if backend == "ollama" else CLAUDE_MODEL)
+    meta["recleaned"] = True
+    meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+
+
+def _do_redo(args: argparse.Namespace, backend: str) -> int:
+    try:
+        transcript, session_dir = _resolve_redo(Path(args.redo))
+    except FileNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if not transcript:
+        print("error: transcript is empty", file=sys.stderr)
+        return 1
+
+    _say(f"Re-cleaning via {backend} ({args.mode}) ...")
+    from .cleanup import clean
+
+    try:
+        result = clean(transcript, mode=args.mode, backend=backend, model=args.model)
+    except (RuntimeError, ValueError) as exc:
+        print(f"error: cleanup failed: {exc}", file=sys.stderr)
+        return 1
+
+    note_text = f"# {result.title}\n\n{result.body.strip()}\n"
+    if session_dir is not None:
+        (session_dir / "note.md").write_text(note_text, encoding="utf-8")
+        _update_meta(session_dir, args.mode, backend, args.model)
+        _say(f"📁 updated {session_dir / 'note.md'}")
+
+    if not args.no_clipboard:
+        from .output import copy_to_clipboard
+
+        if copy_to_clipboard(note_text):
+            _say("   → copied to clipboard")
+    if args.to_stdout:
+        sys.stdout.write(note_text)
+    if args.open_editor and session_dir is not None:
+        _open_in_editor(session_dir / "note.md")
+    return 0
+
+
+# --- normal flow ------------------------------------------------------------
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv if argv is not None else sys.argv[1:])
     assert args.mode in MODES
 
+    # Utility actions short-circuit before any recording/transcription.
+    if args.setup:
+        firstrun.run(None, force=True)
+        return 0
+    if args.show_config:
+        return _show_config()
+    if args.doctor:
+        from . import doctor
+
+        return doctor.run(args.backend or config.backend())
+
     # First-run setup (interactive TTY only; a no-op otherwise), then resolve the
     # backend: explicit --backend flag > saved choice / env > built-in default.
     firstrun.run(args.backend)
     backend = args.backend or config.backend()
+
+    if args.redo:
+        return _do_redo(args, backend)
 
     started = datetime.now()
     tmp_wav: Path | None = None
@@ -58,7 +192,7 @@ def main(argv: list[str] | None = None) -> int:
         if not audio_path.is_file():
             print(f"error: no such file: {audio_path}", file=sys.stderr)
             return 2
-        print(f"Using audio file: {audio_path}")
+        _say(f"Using audio file: {audio_path}")
         rec_duration = None
     else:
         from .record import record_to_wav
@@ -72,11 +206,11 @@ def main(argv: list[str] | None = None) -> int:
         if rec_duration < 0.5:
             print("Nothing recorded (too short). Aborting.", file=sys.stderr)
             return 1
-        print(f"Recorded {rec_duration:.1f}s.")
+        _say(f"Recorded {rec_duration:.1f}s.")
         audio_path = tmp_wav
 
     # 2. Transcribe.
-    print("Transcribing ...")
+    _say("Transcribing ...")
     t0 = time.monotonic()
     from .transcribe import transcribe
 
@@ -89,7 +223,7 @@ def main(argv: list[str] | None = None) -> int:
     if not transcript:
         print("Transcript is empty (no speech detected?). Aborting.", file=sys.stderr)
         return 1
-    print(f"  {len(transcript)} chars in {transcribe_s}s (lang={tmeta.get('language')}).")
+    _say(f"  {len(transcript)} chars in {transcribe_s}s (lang={tmeta.get('language')}).")
 
     # 3. Clean up (unless --raw).
     note_body: str | None = None
@@ -101,15 +235,15 @@ def main(argv: list[str] | None = None) -> int:
         words = transcript.split()
         title = " ".join(words[:6]) if words else "voice note"
     else:
-        print(f"Cleaning up via {backend} ({args.mode}) ...")
+        _say(f"Cleaning up via {backend} ({args.mode}) ...")
         t0 = time.monotonic()
         from .cleanup import clean
 
         try:
             result = clean(transcript, mode=args.mode, backend=backend, model=args.model)
         except (NotImplementedError, RuntimeError, ValueError) as exc:
-            print(f"\nCleanup unavailable: {exc}\n", file=sys.stderr)
-            print("Keeping the raw transcript instead.", file=sys.stderr)
+            _say(f"\nCleanup unavailable: {exc}\n")
+            _say("Keeping the raw transcript instead.")
             words = transcript.split()
             title = " ".join(words[:6]) if words else "voice note"
         else:
@@ -118,7 +252,7 @@ def main(argv: list[str] | None = None) -> int:
             note_body = result.body
             cleanup_backend = backend
             cleanup_model = args.model or (config.ollama_model() if backend == "ollama" else CLAUDE_MODEL)
-            print(f"  done in {cleanup_s}s.")
+            _say(f"  done in {cleanup_s}s.")
 
     # 4. Write session folder.
     from .output import copy_to_clipboard, make_session_dir, write_session
@@ -147,21 +281,26 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     # 5. Clipboard.
-    clip_target = note_body if note_body is not None else transcript
+    note_text = transcript if note_body is None else f"# {title}\n\n{note_body.strip()}\n"
     clipped = False
     if not args.no_clipboard:
-        clipped = copy_to_clipboard(clip_target if note_body is None else f"# {title}\n\n{note_body.strip()}\n")
+        clipped = copy_to_clipboard(note_text)
 
-    # 6. Report.
-    print()
-    print(f"📁 {session_dir}")
+    # 6. Report (to stderr; the note itself goes to stdout only with --stdout).
+    _say("")
+    _say(f"📁 {session_dir}")
     for name in ("audio", "transcript", "note", "meta"):
         if name in written:
-            print(f"   {name:10s} {written[name].name}")
+            _say(f"   {name:10s} {written[name].name}")
     if clipped:
-        print('   → copied to clipboard')
+        _say("   → copied to clipboard")
     elif not args.no_clipboard:
-        print('   (clipboard copy failed — no clipboard tool found; see README)')
+        _say("   (clipboard copy failed — no clipboard tool found; see README)")
+
+    if args.to_stdout:
+        sys.stdout.write(note_text if note_text.endswith("\n") else note_text + "\n")
+    if args.open_editor and "note" in written:
+        _open_in_editor(written["note"])
 
     # Clean up the temp recording dir; the wav has been copied into the session.
     if tmp_wav is not None and not args.keep_temp_audio:

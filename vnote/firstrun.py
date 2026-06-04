@@ -81,9 +81,17 @@ def _ask(prompt: str, options: list[str], default: int) -> int:
         print("  (please enter a number from the list)")
 
 
-def run(backend_flag: str | None) -> None:
-    """If setup is warranted, prompt and persist the choice. Safe to call always."""
-    if not should_run(backend_flag):
+def run(backend_flag: str | None, *, force: bool = False) -> None:
+    """If setup is warranted, prompt and persist the choice. Safe to call always.
+
+    ``force=True`` (used by ``vnote --setup``) re-runs setup even when a config
+    already exists, but still requires an interactive terminal.
+    """
+    if force:
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            print("Setup needs an interactive terminal.", file=sys.stderr)
+            return
+    elif not should_run(backend_flag):
         return
 
     print("\nFirst run — let's pick how vnote cleans up your transcripts.\n")

@@ -29,7 +29,15 @@ into whatever you're typing in. If you're on macOS and want point-and-talk dicta
 
 Processing an existing file (`vnote memo.m4a`) needs no audio setup at all.
 
-## Setup (once)
+## Install
+
+Quickest — installs the `vnote` command in its own isolated environment:
+
+```bash
+uv tool install git+https://github.com/greenwoodms06/vnote
+```
+
+Or from a clone (recommended if you want to hack on it):
 
 ```bash
 uv sync                       # creates .venv with deps
@@ -37,6 +45,8 @@ uv pip install -e .           # installs the `vnote` command
 # optional: cloud cleanup backend
 uv pip install -e '.[claude]' # adds the Anthropic SDK for `--backend claude`
 ```
+
+After installing, run `vnote --doctor` to check your environment.
 
 For **local** cleanup you also need [Ollama](https://ollama.com). vnote walks you
 through picking a model on first run (see below), or pull one yourself:
@@ -71,10 +81,24 @@ vnote --summary            # condensed rewrite
 vnote --raw                # transcript only, no LLM
 vnote --backend claude     # use the Claude backend (needs the [claude] extra + key)
 vnote --no-clipboard       # don't touch the clipboard
+vnote --redo DIR           # re-run cleanup on a saved note (skips transcription)
+vnote --stdout             # also print the note to stdout (for piping)
+vnote -o, --open           # open the new note in $EDITOR afterward
 ```
 
 You can dictate formatting instructions as you talk ("make that a bulleted list",
 "scratch that", "put a heading here") — the cleanup step follows them.
+
+`--redo` is handy for trying a different cleanup intensity without re-transcribing
+(transcription is the slow part) — e.g. `vnote --redo voice-notes/2026-… --summary`.
+
+### Check & configure
+
+```bash
+vnote --doctor             # check recorder, GPU, clipboard, and backend — with fixes
+vnote --config             # show resolved settings and the config-file path
+vnote --setup              # re-run the interactive first-run setup
+```
 
 **No GPU?** Use `--backend claude` (cleanup runs in the cloud); transcription falls
 back to CPU automatically — slower, but it works.
