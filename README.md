@@ -46,7 +46,13 @@ uv pip install -e .           # installs the `vnote` command
 uv pip install -e '.[claude]' # adds the Anthropic SDK for `--backend claude`
 ```
 
-After installing, run `vnote --doctor` to check your environment.
+> **Invoking it from a clone:** the `vnote` command lives inside the project's
+> `.venv`, so run it with **`uv run vnote …`** (uv handles the venv for you), or
+> activate the venv first (`source .venv/bin/activate`) and then call `vnote`
+> directly. The `uv tool install` route above instead puts `vnote` on your PATH
+> globally, so no prefix is needed. The examples below use the bare `vnote` form.
+
+After installing, run `vnote --doctor` (or `uv run vnote --doctor`) to check your environment.
 
 For **local** cleanup you also need [Ollama](https://ollama.com). vnote walks you
 through picking a model on first run (see below), or pull one yourself:
@@ -71,6 +77,9 @@ anytime with a flag or a `VNOTE_*` environment variable. The prompt is skipped w
 input isn't a terminal, so scripts and pipelines are never blocked.
 
 ## Use
+
+(From a clone, prefix these with `uv run` — e.g. `uv run vnote` — or activate the
+venv first. See [Install](#install).)
 
 ```bash
 vnote                      # record from the mic; press Enter to stop
@@ -135,8 +144,8 @@ directory is auto-loaded (see `.env.example`).
 
 ```bash
 uv pip install -e '.[dev]'   # pytest + ruff
-pytest -q                    # unit tests (pure logic; no GPU/mic/network)
-ruff check vnote tests
+uv run pytest -q             # unit tests (pure logic; no GPU/mic/network)
+uv run ruff check vnote tests
 ```
 
 The unit tests cover the testable core (transcript parsing, slugging, config
@@ -145,7 +154,7 @@ the Ollama/Claude calls — can't run in CI; smoke-test them manually with the b
 public-domain clip:
 
 ```bash
-vnote .testdata/jfk.flac
+uv run vnote .testdata/jfk.flac
 ```
 
 ## License
