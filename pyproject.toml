@@ -25,6 +25,11 @@ claude = ["anthropic>=0.40"]
 # Dev tooling (tests + lint).
 dev = ["pytest>=8", "ruff>=0.6"]
 
+[project.urls]
+Homepage = "https://github.com/greenwoodms06/vnote"
+Repository = "https://github.com/greenwoodms06/vnote"
+Issues = "https://github.com/greenwoodms06/vnote/issues"
+
 [project.scripts]
 vnote = "vnote.cli:main"
 
