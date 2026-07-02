@@ -19,20 +19,26 @@ _NEW_PARAGRAPH = re.compile(r",?\s*\bnew paragraph\b[,.]?\s*", re.IGNORECASE)
 _NEW_LINE = re.compile(r",?\s*\bnew ?line\b[,.]?\s*", re.IGNORECASE)
 _SCRATCH = re.compile(r",?\s*\bscratch that\b[,.!]?\s*", re.IGNORECASE)
 
-def _drop_last_sentence(text: str) -> str:
-    """Everything up to (and including) the last sentence boundary; '' if there is none."""
-    text = text.rstrip().rstrip(".!?")  # a trailing ender belongs to the sentence being dropped
-    cut = max(text.rfind(ch) for ch in ".!?\n")
+# Clause boundaries, not just sentence enders: continuous dictation often comes
+# out of Whisper as one long comma-separated run, and "scratch that" should
+# delete the last clause — not everything since the last full stop.
+_BOUNDARIES = ".,!?;:\n"
+
+
+def _drop_last_clause(text: str) -> str:
+    """Everything up to (and including) the last clause boundary; '' if there is none."""
+    text = text.rstrip().rstrip(_BOUNDARIES)  # trailing punctuation belongs to the clause being dropped
+    cut = max(text.rfind(ch) for ch in _BOUNDARIES)
     return text[: cut + 1] if cut != -1 else ""
 
 
 def apply_commands(text: str) -> str:
     """Apply spoken editing commands; text without commands passes through unchanged."""
     # Line-break commands first, so a spoken "new line" already counts as a
-    # sentence boundary when "scratch that" looks backwards for one.
+    # boundary when "scratch that" looks backwards for one.
     text = _NEW_PARAGRAPH.sub("\n\n", text)
     text = _NEW_LINE.sub("\n", text)
     while (m := _SCRATCH.search(text)) is not None:
-        kept = _drop_last_sentence(text[: m.start()])
+        kept = _drop_last_clause(text[: m.start()])
         text = f"{kept} {text[m.end():]}".strip()
     return re.sub(r"[ \t]*\n[ \t]*", "\n", text).strip()

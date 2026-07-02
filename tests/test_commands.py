@@ -53,3 +53,10 @@ def test_scratch_respects_spoken_new_line_boundary():
 
 def test_scratch_without_any_boundary_drops_everything_before():
     assert apply_commands("all of this goes scratch that only this stays") == "only this stays"
+
+
+def test_scratch_in_comma_run_deletes_only_the_last_clause():
+    # continuous dictation: Whisper punctuates with commas, no full stops anywhere
+    assert apply_commands(
+        "today I did stuff, met with John, reviewed the code, scratch that, reviewed the docs"
+    ) == "today I did stuff, met with John, reviewed the docs"
