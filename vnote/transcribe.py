@@ -61,12 +61,13 @@ def _load_model():
     return _model
 
 
-def _run(model, audio_path: Path, language: str | None):
+def _run(model, audio_path: Path, language: str | None, hotwords: str | None = None):
     segments, info = model.transcribe(
         str(audio_path),
         language=language,
         vad_filter=True,
         beam_size=5,
+        hotwords=hotwords,
     )
     text = "".join(seg.text for seg in segments).strip()  # consuming the generator runs inference
     return text, info
@@ -75,15 +76,18 @@ def _run(model, audio_path: Path, language: str | None):
 def transcribe(audio_path: Path, language: str | None = None) -> tuple[str, dict]:
     """Transcribe ``audio_path``. Returns (text, info_dict)."""
     global _model, _device
+    from . import vocab
+
+    hotwords = vocab.hotwords_string()
     model = _load_model()
     try:
-        text, info = _run(model, audio_path, language)
+        text, info = _run(model, audio_path, language, hotwords=hotwords)
     except Exception as exc:  # noqa: BLE001
         if _device == "cuda" and _is_cuda_problem(exc):
             print(f"  (GPU inference failed: {exc}; retrying on CPU)", file=sys.stderr)
             _model = _build("cpu")
             _device = "cpu"
-            text, info = _run(_model, audio_path, language)
+            text, info = _run(_model, audio_path, language, hotwords=hotwords)
         else:
             raise
     meta = {
@@ -93,4 +97,4 @@ def transcribe(audio_path: Path, language: str | None = None) -> tuple[str, dict
         "language_probability": round(float(info.language_probability), 3),
         "audio_duration_s": round(float(info.duration), 2),
     }
-    return text, meta
+    return vocab.apply_corrections(text), meta
