@@ -89,6 +89,10 @@ def _show_config() -> int:
     print(f"  ollama_host : {config.OLLAMA_HOST}")
     daemon_host, daemon_port = config.daemon_addr()
     print(f"  daemon      : {daemon_host}:{daemon_port} (start one with `vnote --serve`)")
+    from .vocab import vocab_file
+
+    vf = vocab_file()
+    print(f"  vocab       : {vf} {'(exists)' if vf.exists() else '(none — create it for hotwords/corrections)'}")
     print(f"  hotkey      : {config.HOTKEY} (vnote-flow toggle)")
     print(f"  inject      : {config.INJECT}")
     print(f"  notes_dir   : {config.NOTES_DIR}")

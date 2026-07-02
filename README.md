@@ -143,6 +143,24 @@ light dictation prompt also fixes punctuation/fillers and handles the fuzzier
 commands ("period", "quote … unquote") — point `VNOTE_DICTATION_MODEL` at a
 small model (e.g. `llama3.2:3b`) to keep it fast.
 
+**Your words** (`~/.config/vnote/vocab.txt`, all transcription paths, no
+restart needed — see `vnote --config` for the path):
+
+```
+TRANSFORM              # bare line: bias transcription toward this spelling
+Dymola
+jason -> JSON          # correction: fix the transcript afterwards (whole-word)
+v note -> vnote
+```
+
+**Tone**: `vnote-flow --clean --tone casual` (any free text), or per-app via an
+`app_tones` map in `~/.config/vnote/config.json` matched against the focused
+window's title:
+
+```json
+{ "app_tones": { "slack": "casual", "outlook": "formal, concise" } }
+```
+
 Run it on the machine that owns the **keyboard and mic**:
 
 | Setup | Daemon | `vnote-flow` |
@@ -204,6 +222,7 @@ directory is auto-loaded (see `.env.example`).
 | `VNOTE_VAD_SILENCE` | `1.0` (seconds of pause that end an utterance) |
 | `VNOTE_STREAM` | off (vnote-flow: `1` = transcribe while speaking) |
 | `VNOTE_DICTATION_MODEL` | the `ollama_model` (small/fast model for `--clean` dictation) |
+| `VNOTE_VOCAB` | `~/.config/vnote/vocab.txt` (hotwords + corrections) |
 | `ANTHROPIC_API_KEY` | — (required for `--backend claude`) |
 
 ## Development
