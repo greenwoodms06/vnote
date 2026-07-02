@@ -12,6 +12,7 @@ import json
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import quote
 
 from . import config
 from .cleanup import CleanResult  # light: cleanup.py has no heavy top-level imports
@@ -22,20 +23,21 @@ def _base() -> str:
     return f"http://{host}:{port}"
 
 
-def is_up(timeout: float = 0.3) -> bool:
+def health(timeout: float = 0.3) -> dict | None:
+    """The daemon's /health payload, or None if nothing (healthy) is listening."""
     try:
         with urllib.request.urlopen(f"{_base()}/health", timeout=timeout) as r:
-            return json.loads(r.read()).get("status") == "ok"
+            data = json.loads(r.read())
     except (urllib.error.URLError, TimeoutError, ConnectionError, ValueError):
-        return False
+        return None
+    return data if isinstance(data, dict) and data.get("status") == "ok" else None
 
 
-def _post(path: str, payload: dict, timeout: float) -> dict:
-    req = urllib.request.Request(
-        f"{_base()}{path}",
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
-    )
+def is_up(timeout: float = 0.3) -> bool:
+    return health(timeout) is not None
+
+
+def _request(req: urllib.request.Request, timeout: float) -> dict:
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             data = json.loads(r.read())
@@ -52,8 +54,29 @@ def _post(path: str, payload: dict, timeout: float) -> dict:
     return data
 
 
+def _post(path: str, payload: dict, timeout: float) -> dict:
+    req = urllib.request.Request(
+        f"{_base()}{path}",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    return _request(req, timeout)
+
+
 def transcribe(audio_path: Path, language: str | None = None) -> tuple[str, dict]:
     d = _post("/transcribe", {"audio_path": str(audio_path), "language": language}, timeout=600)
+    return d["transcript"], d["meta"]
+
+
+def transcribe_bytes(data: bytes, fmt: str = "wav", language: str | None = None) -> tuple[str, dict]:
+    """Transcribe in-memory audio — for clients that don't share the daemon's filesystem."""
+    query = f"?format={quote(fmt)}" + (f"&language={quote(language)}" if language else "")
+    req = urllib.request.Request(
+        f"{_base()}/transcribe{query}",
+        data=data,
+        headers={"Content-Type": "application/octet-stream"},
+    )
+    d = _request(req, timeout=600)
     return d["transcript"], d["meta"]
 
 

@@ -9,11 +9,15 @@ guaranteed concurrency-safe).
 from __future__ import annotations
 
 import json
+import os
+import re
 import sys
+import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from . import __version__, config
 
@@ -58,19 +62,46 @@ class _Handler(BaseHTTPRequestHandler):
         else:
             self._send(404, {"error": "not found"})
 
+    def _transcribe(self, audio: Path, language: str | None) -> None:
+        from .transcribe import transcribe
+
+        with _infer_lock:
+            text, meta = transcribe(audio, language=language)
+        self._send(200, {"transcript": text, "meta": meta})
+
+    def _transcribe_body(self, query: dict[str, list[str]]) -> None:
+        """Bytes mode: the request body is the audio itself (client machines don't
+        share our filesystem). Written to a temp file for the duration of the call."""
+        n = int(self.headers.get("Content-Length", 0) or 0)
+        if n <= 0:
+            return self._send(400, {"error": "empty audio body"})
+        fmt = (query.get("format") or ["wav"])[0].lower()
+        if not re.fullmatch(r"[a-z0-9]{1,8}", fmt):
+            return self._send(400, {"error": f"bad format: {fmt!r}"})
+        language = (query.get("language") or [None])[0]
+        fd, name = tempfile.mkstemp(prefix="vnote-upload-", suffix=f".{fmt}")
+        tmp = Path(name)
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(self.rfile.read(n))
+            self._transcribe(tmp, language)
+        finally:
+            tmp.unlink(missing_ok=True)
+
     def do_POST(self) -> None:
         try:
-            data = self._read_json()
-            if self.path == "/transcribe":
+            url = urlparse(self.path)
+            if url.path == "/transcribe":
+                ctype = (self.headers.get("Content-Type") or "").partition(";")[0].strip().lower()
+                if ctype == "application/octet-stream" or ctype.startswith("audio/"):
+                    return self._transcribe_body(parse_qs(url.query))
+                data = self._read_json()
                 audio = Path(data["audio_path"]).expanduser()
                 if not audio.is_file():
                     return self._send(400, {"error": f"no such file: {audio}"})
-                from .transcribe import transcribe
-
-                with _infer_lock:
-                    text, meta = transcribe(audio, language=data.get("language"))
-                self._send(200, {"transcript": text, "meta": meta})
-            elif self.path == "/clean":
+                self._transcribe(audio, data.get("language"))
+            elif url.path == "/clean":
+                data = self._read_json()
                 from .cleanup import clean
 
                 result = clean(
