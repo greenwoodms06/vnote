@@ -168,6 +168,7 @@ def test_flow_defaults():
     assert a.once is False and a.to_stdout is False
     assert a.vad is False and a.vad_silence == 1.0
     assert a.stream is False
+    assert a.tone is None
 
 
 def test_flow_flags():
@@ -180,3 +181,21 @@ def test_flow_flags():
 
 def test_flow_bare_clean_means_dictation():
     assert _parse_args(["--clean"]).clean == "dictation"
+
+
+# --- active-window title command selection --------------------------------------
+
+
+def test_window_title_cmd_per_platform(monkeypatch):
+    from vnote.client import window
+
+    monkeypatch.setattr(window, "_powershell", lambda: "/usr/bin/powershell.exe")
+    cmd = window._title_cmd("wsl")
+    assert "powershell" in cmd[0] and "GetForegroundWindow" in cmd[-1]
+
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}" if name == "xdotool" else None)
+    assert window._title_cmd("x11") == ["xdotool", "getactivewindow", "getwindowname"]
+
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    assert window._title_cmd("x11") is None
+    assert window._title_cmd("wayland") is None

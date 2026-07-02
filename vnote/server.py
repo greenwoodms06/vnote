@@ -181,6 +181,7 @@ class _Handler(BaseHTTPRequestHandler):
                     mode=data.get("mode", "edit"),
                     backend=data.get("backend", "ollama"),
                     model=data.get("model"),
+                    tone=data.get("tone"),
                 )
                 self._send(200, {"title": result.title, "body": result.body})
             elif url.path == "/stream/start":

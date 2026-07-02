@@ -66,8 +66,11 @@ _SYSTEM = (
 )
 
 
-def _build_user_prompt(transcript: str, mode: str) -> str:
-    return f"{_MODE_INSTRUCTIONS[mode]}\n\nTRANSCRIPT:\n\"\"\"\n{transcript}\n\"\"\""
+def _build_user_prompt(transcript: str, mode: str, tone: str | None = None) -> str:
+    instruction = _MODE_INSTRUCTIONS[mode]
+    if tone:
+        instruction += f" Write in a {tone} tone."
+    return f"{instruction}\n\nTRANSCRIPT:\n\"\"\"\n{transcript}\n\"\"\""
 
 
 def _system_for(mode: str) -> str:
@@ -113,14 +116,20 @@ class CleanResult:
 # --- backends ----------------------------------------------------------------
 
 
-def clean(transcript: str, mode: str = "edit", backend: str = "ollama", model: str | None = None) -> CleanResult:
+def clean(
+    transcript: str,
+    mode: str = "edit",
+    backend: str = "ollama",
+    model: str | None = None,
+    tone: str | None = None,
+) -> CleanResult:
     if mode not in _MODE_INSTRUCTIONS:
         raise ValueError(f"unknown mode: {mode!r} (expected one of {', '.join(_MODE_INSTRUCTIONS)})")
     if backend == "ollama":
         default = dictation_model() if mode == "dictation" else ollama_model()
-        return _clean_ollama(transcript, mode, model or default)
+        return _clean_ollama(transcript, mode, model or default, tone)
     if backend == "claude":
-        return _clean_claude(transcript, mode, model or CLAUDE_MODEL)
+        return _clean_claude(transcript, mode, model or CLAUDE_MODEL, tone)
     raise ValueError(f"unknown backend: {backend!r} (expected 'ollama' or 'claude')")
 
 
@@ -167,7 +176,7 @@ def _ensure_model_present(model: str) -> None:
     )
 
 
-def _clean_ollama(transcript: str, mode: str, model: str) -> CleanResult:
+def _clean_ollama(transcript: str, mode: str, model: str, tone: str | None = None) -> CleanResult:
     _ensure_ollama_running()
     _ensure_model_present(model)
     payload = {
@@ -176,7 +185,7 @@ def _clean_ollama(transcript: str, mode: str, model: str) -> CleanResult:
         "options": {"temperature": 0.3},
         "messages": [
             {"role": "system", "content": _system_for(mode)},
-            {"role": "user", "content": _build_user_prompt(transcript, mode)},
+            {"role": "user", "content": _build_user_prompt(transcript, mode, tone)},
         ],
     }
     req = urllib.request.Request(
@@ -195,7 +204,7 @@ def _clean_ollama(transcript: str, mode: str, model: str) -> CleanResult:
 # --- Claude (optional cloud backend) ---
 
 
-def _clean_claude(transcript: str, mode: str, model: str) -> CleanResult:
+def _clean_claude(transcript: str, mode: str, model: str, tone: str | None = None) -> CleanResult:
     """Clean up via the Anthropic API. Opt-in: needs the `claude` extra + a key.
 
     Reuses the same system prompt, user prompt and response parser as the local
@@ -224,7 +233,7 @@ def _clean_claude(transcript: str, mode: str, model: str) -> CleanResult:
             max_tokens=8192,
             temperature=0.3,
             system=_system_for(mode),
-            messages=[{"role": "user", "content": _build_user_prompt(transcript, mode)}],
+            messages=[{"role": "user", "content": _build_user_prompt(transcript, mode, tone)}],
         )
     except anthropic.APIError as exc:
         raise RuntimeError(f"Anthropic API error: {exc}") from exc

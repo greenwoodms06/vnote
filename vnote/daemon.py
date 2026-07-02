@@ -80,8 +80,15 @@ def transcribe_bytes(data: bytes, fmt: str = "wav", language: str | None = None)
     return d["transcript"], d["meta"]
 
 
-def clean(transcript: str, mode: str = "edit", backend: str = "ollama", model: str | None = None) -> CleanResult:
-    d = _post("/clean", {"transcript": transcript, "mode": mode, "backend": backend, "model": model}, timeout=600)
+def clean(
+    transcript: str,
+    mode: str = "edit",
+    backend: str = "ollama",
+    model: str | None = None,
+    tone: str | None = None,
+) -> CleanResult:
+    payload = {"transcript": transcript, "mode": mode, "backend": backend, "model": model, "tone": tone}
+    d = _post("/clean", payload, timeout=600)
     return CleanResult(title=d["title"], body=d["body"])
 
 

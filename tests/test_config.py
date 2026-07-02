@@ -59,3 +59,14 @@ def test_ollama_model_resolution_order(tmp_path, monkeypatch):
     assert config.ollama_model() == "qwen2.5:7b-instruct"
     monkeypatch.setenv("VNOTE_OLLAMA_MODEL", "llama3.2:3b")
     assert config.ollama_model() == "llama3.2:3b"
+
+
+def test_app_tone_matching(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    assert config.app_tones() == {}  # no config file -> empty map
+    assert config.app_tone_for("anything") is None
+
+    config.save_config({"app_tones": {"slack": "casual", "outlook": "formal"}})
+    assert config.app_tone_for("#eng-general - Slack") == "casual"
+    assert config.app_tone_for("Inbox - Outlook") == "formal"
+    assert config.app_tone_for("Notepad") is None

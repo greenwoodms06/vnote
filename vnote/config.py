@@ -123,3 +123,18 @@ def dictation_model() -> str:
     Falls back to the regular note-cleanup model so dictation works with no extra setup.
     """
     return os.environ.get("VNOTE_DICTATION_MODEL") or load_config().get("dictation_model") or ollama_model()
+
+
+def app_tones() -> dict[str, str]:
+    """The per-app tone map from the config file: window-title substring -> tone."""
+    tones = load_config().get("app_tones")
+    return tones if isinstance(tones, dict) else {}
+
+
+def app_tone_for(window_title: str) -> str | None:
+    """First tone whose substring appears in the title (case-insensitive), else None."""
+    title = window_title.lower()
+    for needle, tone in app_tones().items():
+        if needle.lower() in title:
+            return tone
+    return None

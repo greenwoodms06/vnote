@@ -43,6 +43,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
                         "(default: raw transcript)")
     p.add_argument("--backend", choices=("ollama", "claude"), default=None, help="cleanup backend for --clean")
     p.add_argument("--model", help="override the cleanup model for --clean")
+    p.add_argument("--tone", default=None,
+                   help="tone for --clean output (e.g. 'casual', 'formal'); default: per-app "
+                        "match from the config's app_tones map, else none")
     p.add_argument("--language", help="force transcription language (e.g. 'en'); default: auto-detect")
     p.add_argument("--inject", choices=("auto", "paste", "type"), default=config.INJECT, dest="inject_method",
                    help="how to put text into the focused app (default: %(default)s; env VNOTE_INJECT)")
@@ -61,6 +64,25 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+def _app_tone() -> str | None:
+    """Tone matched from the focused window, if the user configured an app_tones map.
+
+    Gated on the map being non-empty: fetching the title costs a subprocess
+    (a powershell spawn on WSL), so don't pay it when it can't matter.
+    """
+    if not config.app_tones():
+        return None
+    from .window import active_window_title
+
+    title = active_window_title()
+    if not title:
+        return None
+    tone = config.app_tone_for(title)
+    if tone:
+        _say(f"  (tone: {tone} — matched {title[:40]!r})")
+    return tone
+
+
 def _deliver(text: str, args: argparse.Namespace, t0: float) -> None:
     """Transcript -> spoken commands -> (optional clean) -> inject/print."""
     # With --clean, leave "scratch that" for the LLM — it can merge the correction
@@ -70,8 +92,10 @@ def _deliver(text: str, args: argparse.Namespace, t0: float) -> None:
         _say("  (no speech detected)")
         return
     if args.clean:
+        tone = args.tone or _app_tone()
         try:
-            result = daemon.clean(text, mode=args.clean, backend=args.backend or config.backend(), model=args.model)
+            result = daemon.clean(text, mode=args.clean, backend=args.backend or config.backend(),
+                                  model=args.model, tone=tone)
             text = result.body.strip()  # body only — no title header when typing into an app
         except RuntimeError as exc:
             _say(f"  (cleanup failed: {exc}; using the raw transcript)")

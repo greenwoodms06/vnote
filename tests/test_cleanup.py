@@ -64,6 +64,11 @@ def test_dictation_prompt_mentions_spoken_commands():
     assert "scratch that" in prompt
 
 
+def test_tone_lands_in_the_prompt():
+    assert "Write in a casual tone." in _build_user_prompt("x", "dictation", tone="casual")
+    assert "tone" not in _build_user_prompt("x", "light")  # no tone -> no tone sentence
+
+
 def test_clean_rejects_unknown_mode():
     with pytest.raises(ValueError, match="unknown mode"):
         clean("x", mode="bogus")

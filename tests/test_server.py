@@ -24,8 +24,8 @@ def _fake_transcribe(audio_path, language=None):
     return "fake transcript", {"language": language or "en", "device": "fake"}
 
 
-def _fake_clean(transcript, mode="edit", backend="ollama", model=None):
-    _seen["clean"] = (transcript, mode, backend, model)
+def _fake_clean(transcript, mode="edit", backend="ollama", model=None, tone=None):
+    _seen["clean"] = (transcript, mode, backend, model, tone)
     return CleanResult(title="Fake Title", body="Fake body.")
 
 
@@ -85,9 +85,9 @@ def test_transcribe_bytes_mode_bad_format(live_server):
 
 
 def test_clean_round_trip(live_server):
-    result = daemon.clean("hello", mode="summary", backend="ollama", model="m")
+    result = daemon.clean("hello", mode="summary", backend="ollama", model="m", tone="formal")
     assert result == CleanResult(title="Fake Title", body="Fake body.")
-    assert _seen["clean"] == ("hello", "summary", "ollama", "m")
+    assert _seen["clean"] == ("hello", "summary", "ollama", "m", "formal")
 
 
 def test_unknown_path_is_404(live_server):
