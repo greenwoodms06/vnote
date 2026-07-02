@@ -132,6 +132,7 @@ vnote --serve                        # somewhere: the warm daemon
 vnote-flow                           # hotkey loop (needs the [flow] extra: pynput)
 vnote-flow --vad                     # auto-stop after a ~1s pause (no second key press)
 vnote-flow --clean                   # fast LLM 'dictation' cleanup before pasting (default: raw)
+vnote-flow --stream                  # live partial text on the console while you speak
 vnote-flow --once --print            # one hotkey-free cycle to stdout (works anywhere)
 vnote-flow --inject type             # per-character typing instead of pasting
 ```
@@ -201,6 +202,7 @@ directory is auto-loaded (see `.env.example`).
 | `VNOTE_INJECT` | `auto` (vnote-flow: `paste`/`type`) |
 | `VNOTE_VAD` | off (vnote-flow: `1` = auto-stop on silence) |
 | `VNOTE_VAD_SILENCE` | `1.0` (seconds of pause that end an utterance) |
+| `VNOTE_STREAM` | off (vnote-flow: `1` = transcribe while speaking) |
 | `VNOTE_DICTATION_MODEL` | the `ollama_model` (small/fast model for `--clean` dictation) |
 | `ANTHROPIC_API_KEY` | — (required for `--backend claude`) |
 
