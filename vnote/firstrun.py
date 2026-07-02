@@ -19,7 +19,7 @@ from . import config
 _OLLAMA_TIERS = [
     ("qwen2.5:14b-instruct", 10, "best quality — needs a good GPU (~10 GB VRAM)"),
     ("qwen2.5:7b-instruct", 6, "solid quality — modest GPU (~6 GB VRAM)"),
-    ("llama3.2:3b-instruct", 3, "fastest, lightest — small GPU or CPU (~3 GB)"),
+    ("llama3.2:3b", 3, "fastest, lightest — small GPU or CPU (~3 GB)"),
 ]
 
 

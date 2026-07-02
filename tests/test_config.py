@@ -57,5 +57,5 @@ def test_ollama_model_resolution_order(tmp_path, monkeypatch):
     assert config.ollama_model() == config.BUILTIN_OLLAMA_MODEL
     config.save_config({"ollama_model": "qwen2.5:7b-instruct"})
     assert config.ollama_model() == "qwen2.5:7b-instruct"
-    monkeypatch.setenv("VNOTE_OLLAMA_MODEL", "llama3.2:3b-instruct")
-    assert config.ollama_model() == "llama3.2:3b-instruct"
+    monkeypatch.setenv("VNOTE_OLLAMA_MODEL", "llama3.2:3b")
+    assert config.ollama_model() == "llama3.2:3b"

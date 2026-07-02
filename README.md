@@ -58,7 +58,7 @@ For **local** cleanup you also need [Ollama](https://ollama.com). vnote walks yo
 through picking a model on first run (see below), or pull one yourself:
 
 ```bash
-ollama pull qwen2.5:14b-instruct   # default; ~10 GB VRAM. Lighter: qwen2.5:7b-instruct / llama3.2:3b-instruct
+ollama pull qwen2.5:14b-instruct   # default; ~10 GB VRAM. Lighter: qwen2.5:7b-instruct / llama3.2:3b
 ```
 
 The first transcription downloads the Whisper model (~1.6 GB) to `~/.cache/huggingface`.
@@ -140,7 +140,7 @@ Spoken commands **"new line"**, **"new paragraph"** and **"scratch that"** are
 applied to the transcript by rule, even without `--clean`. With `--clean`, a
 light dictation prompt also fixes punctuation/fillers and handles the fuzzier
 commands ("period", "quote … unquote") — point `VNOTE_DICTATION_MODEL` at a
-small model (e.g. `llama3.2:3b-instruct`) to keep it fast.
+small model (e.g. `llama3.2:3b`) to keep it fast.
 
 Run it on the machine that owns the **keyboard and mic**:
 
