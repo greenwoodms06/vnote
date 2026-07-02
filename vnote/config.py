@@ -91,6 +91,11 @@ def daemon_addr() -> tuple[str, int]:
     return DAEMON_HOST, DAEMON_PORT
 
 
+# --- flow client (`vnote-flow`) ---
+HOTKEY = os.environ.get("VNOTE_HOTKEY", "ctrl+shift+space")
+INJECT = os.environ.get("VNOTE_INJECT", "auto")  # auto | paste | type
+
+
 # Cleanup intensity modes.
 MODES = ("light", "edit", "summary")
 DEFAULT_MODE = "edit"
