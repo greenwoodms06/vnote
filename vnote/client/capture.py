@@ -66,6 +66,12 @@ class Recorder:
         for chunk in iter(lambda: self._proc.stdout.read(4096), b""):
             self._pcm.write(chunk)
 
+    def pcm_snapshot(self) -> bytes:
+        """Raw PCM captured so far — safe to call while recording (used by VAD polling)."""
+        if self._proc is not None:
+            return self._pcm.getvalue()
+        return b"".join(self._chunks)
+
     def stop(self) -> tuple[bytes, float]:
         """Stop capturing. Returns (wav_bytes, seconds_recorded)."""
         if self._proc is not None:

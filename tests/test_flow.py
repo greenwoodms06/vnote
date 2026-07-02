@@ -166,10 +166,16 @@ def test_flow_defaults():
     assert a.clean is None  # raw transcript by default — latency first
     assert a.inject_method == "auto"
     assert a.once is False and a.to_stdout is False
+    assert a.vad is False and a.vad_silence == 1.0
 
 
 def test_flow_flags():
-    a = _parse_args(["--once", "--print", "--clean", "light", "--inject", "type"])
+    a = _parse_args(["--once", "--print", "--clean", "light", "--inject", "type", "--vad", "--vad-silence", "0.8"])
     assert a.once and a.to_stdout
     assert a.clean == "light"
     assert a.inject_method == "type"
+    assert a.vad is True and a.vad_silence == 0.8
+
+
+def test_flow_bare_clean_means_dictation():
+    assert _parse_args(["--clean"]).clean == "dictation"

@@ -48,6 +48,10 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
                    help="print the text to stdout instead of injecting it")
     p.add_argument("--once", action="store_true",
                    help="single cycle without a hotkey: record now, press Enter to stop")
+    p.add_argument("--vad", action="store_true", default=config.VAD,
+                   help="auto-stop after a pause instead of a second key press (env VNOTE_VAD)")
+    p.add_argument("--vad-silence", type=float, default=config.VAD_SILENCE, metavar="S",
+                   help="trailing-silence window for --vad, in seconds (default: %(default)s)")
     p.add_argument("--version", action="version", version=f"vnote-flow {__version__}")
     return p.parse_args(argv)
 
@@ -85,11 +89,18 @@ def _process(wav: bytes, seconds: float, args: argparse.Namespace) -> None:
 def _run_once(args: argparse.Namespace) -> int:
     rec = Recorder()
     rec.start()
-    _say("● recording — press Enter to stop.")
-    try:
-        input()
-    except EOFError:
-        pass
+    if args.vad:
+        from .. import vad
+
+        _say("● recording — pause to stop.")
+        while not vad.should_stop(rec.pcm_snapshot(), silence_s=args.vad_silence):
+            time.sleep(0.3)
+    else:
+        _say("● recording — press Enter to stop.")
+        try:
+            input()
+        except EOFError:
+            pass
     wav, seconds = rec.stop()
     _say(f"  {seconds:.1f}s recorded.")
     _process(wav, seconds, args)
@@ -107,6 +118,11 @@ def main(argv: list[str] | None = None) -> int:
     host, port = config.daemon_addr()
     _say(f"vnote-flow → daemon at {host}:{port} ({health.get('whisper_model')} on {health.get('device')})")
 
+    if args.vad:  # first Silero call pays the faster_whisper/onnx import; do it before recording
+        from .. import vad
+
+        vad.speech_spans(b"\x00\x00" * 16_000)
+
     if args.once:
         return _run_once(args)
 
@@ -120,30 +136,55 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    events: queue.Queue[str] = queue.Queue()
+    events: queue.Queue[tuple[str, int]] = queue.Queue()
     listen_error: list[BaseException] = []
 
     def _listen() -> None:  # pynput can still die at runtime (e.g. display gone)
         try:
-            listen(args.hotkey, lambda: events.put("toggle"))
+            listen(args.hotkey, lambda: events.put(("toggle", 0)))
         except BaseException as exc:  # noqa: BLE001
             listen_error.append(exc)
-            events.put("quit")
+            events.put(("quit", 0))
+
+    def _watch_vad(rec: Recorder, my_gen: int, done: threading.Event) -> None:
+        from .. import vad
+
+        while not done.wait(0.3):
+            try:
+                if vad.should_stop(rec.pcm_snapshot(), silence_s=args.vad_silence):
+                    events.put(("vad-stop", my_gen))
+                    return
+            except Exception as exc:  # noqa: BLE001
+                _say(f"  (vad failed: {exc}; press the hotkey to stop)")
+                return
 
     threading.Thread(target=_listen, daemon=True).start()
-    _say(f"ready — press {args.hotkey} to dictate, again to stop (Ctrl-C quits).")
+    stop_hint = "pause to stop (the hotkey also stops)" if args.vad else "press the hotkey again to stop"
+    _say(f"ready — press {args.hotkey} to dictate; {stop_hint} (Ctrl-C quits).")
 
     recorder: Recorder | None = None
+    vad_done: threading.Event | None = None
+    gen = 0  # recording generation, so a stale vad-stop can't cut the next take
     try:
         while True:
-            if events.get() == "quit":
+            kind, event_gen = events.get()
+            if kind == "quit":
                 print(f"error: hotkey listener failed: {listen_error[0]}", file=sys.stderr)
                 return 1
+            if kind == "vad-stop" and (recorder is None or event_gen != gen):
+                continue
             if recorder is None:
+                gen += 1
                 recorder = Recorder()
                 recorder.start()
-                _say("● recording — press the hotkey again to stop.")
+                if args.vad:
+                    vad_done = threading.Event()
+                    threading.Thread(target=_watch_vad, args=(recorder, gen, vad_done), daemon=True).start()
+                _say(f"● recording — {'pause' if args.vad else 'press the hotkey again'} to stop.")
             else:
+                if vad_done is not None:
+                    vad_done.set()
+                    vad_done = None
                 wav, seconds = recorder.stop()
                 recorder = None
                 _say(f"  {seconds:.1f}s recorded.")
