@@ -84,6 +84,7 @@ def _show_config() -> int:
     print(f"  backend     : {config.backend()}")
     print(f"  ollama_model: {config.ollama_model()}")
     print(f"  claude_model: {CLAUDE_MODEL}")
+    print(f"  dictation   : {config.dictation_model()} (vnote-flow --clean)")
     print(f"  whisper     : {config.WHISPER_MODEL}")
     print(f"  ollama_host : {config.OLLAMA_HOST}")
     daemon_host, daemon_port = config.daemon_addr()

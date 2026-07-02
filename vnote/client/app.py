@@ -35,8 +35,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(prog="vnote-flow", description="Global push-to-talk dictation via the vnote daemon.")
     p.add_argument("--hotkey", default=config.HOTKEY,
                    help=f"toggle combo (default: {config.HOTKEY}; env VNOTE_HOTKEY)")
-    p.add_argument("--clean", choices=MODES, default=None,
-                   help="LLM-clean the transcript before injecting (default: raw transcript, fastest)")
+    p.add_argument("--clean", nargs="?", const="dictation", choices=("dictation", *MODES), default=None,
+                   help="LLM-clean before injecting: bare --clean means the fast dictation profile "
+                        "(default: raw transcript)")
     p.add_argument("--backend", choices=("ollama", "claude"), default=None, help="cleanup backend for --clean")
     p.add_argument("--model", help="override the cleanup model for --clean")
     p.add_argument("--language", help="force transcription language (e.g. 'en'); default: auto-detect")

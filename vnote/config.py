@@ -94,6 +94,8 @@ def daemon_addr() -> tuple[str, int]:
 # --- flow client (`vnote-flow`) ---
 HOTKEY = os.environ.get("VNOTE_HOTKEY", "ctrl+shift+space")
 INJECT = os.environ.get("VNOTE_INJECT", "auto")  # auto | paste | type
+VAD = os.environ.get("VNOTE_VAD", "").strip().lower() in ("1", "true", "yes", "on")
+VAD_SILENCE = float(os.environ.get("VNOTE_VAD_SILENCE", "1.0"))  # trailing-silence stop window, seconds
 
 
 # Cleanup intensity modes.
@@ -112,3 +114,11 @@ def backend() -> str:
 def ollama_model() -> str:
     """Resolve the Ollama cleanup model."""
     return os.environ.get("VNOTE_OLLAMA_MODEL") or load_config().get("ollama_model") or BUILTIN_OLLAMA_MODEL
+
+
+def dictation_model() -> str:
+    """Resolve the model for `dictation` cleanup — ideally small and fast (a warm 3B).
+
+    Falls back to the regular note-cleanup model so dictation works with no extra setup.
+    """
+    return os.environ.get("VNOTE_DICTATION_MODEL") or load_config().get("dictation_model") or ollama_model()

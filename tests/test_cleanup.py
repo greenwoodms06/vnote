@@ -1,6 +1,9 @@
 """Tests for the transcript-cleanup response parser (pure, no network)."""
 
-from vnote.cleanup import _build_user_prompt, _parse_response
+import pytest
+
+from vnote import config
+from vnote.cleanup import _build_user_prompt, _finish, _parse_response, clean
 
 
 def test_parse_full_title_and_body():
@@ -40,3 +43,39 @@ def test_build_user_prompt_includes_mode_instruction_and_transcript():
     prompt = _build_user_prompt("hello there", "light")
     assert "hello there" in prompt
     assert "filler" in prompt.lower()  # the 'light' instruction mentions filler words
+
+
+# --- dictation mode (flow client) --------------------------------------------
+
+
+def test_dictation_finish_is_plain_text_not_title_framed():
+    r = _finish("TITLE: looks like a title\n---\nbut dictation takes it verbatim", "orig words here", "dictation")
+    assert r.body == "TITLE: looks like a title\n---\nbut dictation takes it verbatim"
+    assert r.title == "orig words here"  # fallback title from the transcript; flow ignores it
+
+
+def test_note_modes_still_parse_title_framing():
+    r = _finish("TITLE: A Note\n---\nbody", "x", "edit")
+    assert (r.title, r.body) == ("A Note", "body")
+
+
+def test_dictation_prompt_mentions_spoken_commands():
+    prompt = _build_user_prompt("x", "dictation")
+    assert "scratch that" in prompt
+
+
+def test_clean_rejects_unknown_mode():
+    with pytest.raises(ValueError, match="unknown mode"):
+        clean("x", mode="bogus")
+
+
+def test_dictation_model_resolution_order(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("VNOTE_DICTATION_MODEL", raising=False)
+    monkeypatch.delenv("VNOTE_OLLAMA_MODEL", raising=False)
+
+    assert config.dictation_model() == config.ollama_model()  # falls back to the note model
+    config.save_config({"dictation_model": "qwen2.5:3b-instruct"})
+    assert config.dictation_model() == "qwen2.5:3b-instruct"
+    monkeypatch.setenv("VNOTE_DICTATION_MODEL", "llama3.2:3b")
+    assert config.dictation_model() == "llama3.2:3b"

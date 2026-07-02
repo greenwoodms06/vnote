@@ -14,7 +14,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
-from .config import CLAUDE_MODEL, OLLAMA_HOST, ollama_model
+from .config import CLAUDE_MODEL, OLLAMA_HOST, dictation_model, ollama_model
 
 # --- prompt construction -----------------------------------------------------
 
@@ -37,7 +37,21 @@ _MODE_INSTRUCTIONS = {
         "cut tangents and trim verbose passages so the result is noticeably more concise than the "
         "original while keeping every substantive point. Use headings and bullets freely."
     ),
+    # Flow-mode dictation: the output is typed straight into whatever app has focus,
+    # so it must be fast (small model), faithful, and plain — no title, no structure.
+    "dictation": (
+        "Clean the dictated fragment: remove filler words (um, uh, you know) and false starts; fix "
+        "punctuation, capitalization and obvious mis-transcriptions. Apply any spoken formatting or "
+        "editing commands ('period', 'comma', 'quote ... unquote', 'scratch that') instead of writing "
+        "them out literally. Do not reorganize, summarize, or add anything; keep the speaker's wording."
+    ),
 }
+
+_DICTATION_SYSTEM = (
+    "You clean up dictated text so it can be typed directly into the app the speaker is using. "
+    "Follow the user's editing instructions exactly. "
+    "Respond with the cleaned text and nothing else — no title line, no preamble, no code fences."
+)
 
 _SYSTEM = (
     "You are an editor that turns spoken, dictated transcripts into clean written notes. "
@@ -56,6 +70,22 @@ def _build_user_prompt(transcript: str, mode: str) -> str:
     return f"{_MODE_INSTRUCTIONS[mode]}\n\nTRANSCRIPT:\n\"\"\"\n{transcript}\n\"\"\""
 
 
+def _system_for(mode: str) -> str:
+    return _DICTATION_SYSTEM if mode == "dictation" else _SYSTEM
+
+
+def _fallback_title(transcript: str) -> str:
+    words = re.findall(r"[A-Za-z0-9']+", transcript)
+    return " ".join(words[:6]) if words else "voice note"
+
+
+def _finish(raw: str, transcript: str, mode: str) -> CleanResult:
+    """Turn a backend response into a CleanResult, per mode's output contract."""
+    if mode == "dictation":  # plain text out, no TITLE/--- framing to parse
+        return CleanResult(title=_fallback_title(transcript), body=raw.strip() or transcript)
+    return _parse_response(raw, transcript)
+
+
 def _parse_response(raw: str, transcript: str) -> CleanResult:
     raw = raw.strip()
     title = None
@@ -71,10 +101,7 @@ def _parse_response(raw: str, transcript: str) -> CleanResult:
         if fm and rest.strip():
             title = fm.group(1).strip().strip("\"'")
             body = rest.strip()
-    if not title:
-        words = re.findall(r"[A-Za-z0-9']+", transcript)
-        title = " ".join(words[:6]) if words else "voice note"
-    return CleanResult(title=title, body=body or transcript)
+    return CleanResult(title=title or _fallback_title(transcript), body=body or transcript)
 
 
 @dataclass
@@ -87,8 +114,11 @@ class CleanResult:
 
 
 def clean(transcript: str, mode: str = "edit", backend: str = "ollama", model: str | None = None) -> CleanResult:
+    if mode not in _MODE_INSTRUCTIONS:
+        raise ValueError(f"unknown mode: {mode!r} (expected one of {', '.join(_MODE_INSTRUCTIONS)})")
     if backend == "ollama":
-        return _clean_ollama(transcript, mode, model or ollama_model())
+        default = dictation_model() if mode == "dictation" else ollama_model()
+        return _clean_ollama(transcript, mode, model or default)
     if backend == "claude":
         return _clean_claude(transcript, mode, model or CLAUDE_MODEL)
     raise ValueError(f"unknown backend: {backend!r} (expected 'ollama' or 'claude')")
@@ -145,7 +175,7 @@ def _clean_ollama(transcript: str, mode: str, model: str) -> CleanResult:
         "stream": False,
         "options": {"temperature": 0.3},
         "messages": [
-            {"role": "system", "content": _SYSTEM},
+            {"role": "system", "content": _system_for(mode)},
             {"role": "user", "content": _build_user_prompt(transcript, mode)},
         ],
     }
@@ -159,7 +189,7 @@ def _clean_ollama(transcript: str, mode: str, model: str) -> CleanResult:
     content = (data.get("message") or {}).get("content", "")
     if not content.strip():
         raise RuntimeError(f"empty response from Ollama model {model!r}")
-    return _parse_response(content, transcript)
+    return _finish(content, transcript, mode)
 
 
 # --- Claude (optional cloud backend) ---
@@ -193,7 +223,7 @@ def _clean_claude(transcript: str, mode: str, model: str) -> CleanResult:
             model=model,
             max_tokens=8192,
             temperature=0.3,
-            system=_SYSTEM,
+            system=_system_for(mode),
             messages=[{"role": "user", "content": _build_user_prompt(transcript, mode)}],
         )
     except anthropic.APIError as exc:
@@ -202,4 +232,4 @@ def _clean_claude(transcript: str, mode: str, model: str) -> CleanResult:
     content = "".join(block.text for block in resp.content if getattr(block, "type", None) == "text")
     if not content.strip():
         raise RuntimeError(f"empty response from Claude model {model!r}")
-    return _parse_response(content, transcript)
+    return _finish(content, transcript, mode)
