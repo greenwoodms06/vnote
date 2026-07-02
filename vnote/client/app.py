@@ -3,7 +3,9 @@
     vnote-flow                 press ctrl+shift+space to talk, again to stop & paste
     vnote-flow --once          one cycle, no hotkey: record now, press Enter to stop
     vnote-flow --print         print the text to stdout instead of pasting
-    vnote-flow --clean edit    LLM-clean the transcript before pasting (default: raw)
+    vnote-flow --clean         fast LLM dictation cleanup before pasting (default: raw)
+    vnote-flow --vad           auto-stop after a pause
+    vnote-flow --stream        live partials while you speak; near-instant final
 
 Runs on the machine that owns the keyboard and mic. On WSL setups that's the
 Windows side — install `vnote[flow]` under Windows Python and point
@@ -52,21 +54,15 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
                    help="auto-stop after a pause instead of a second key press (env VNOTE_VAD)")
     p.add_argument("--vad-silence", type=float, default=config.VAD_SILENCE, metavar="S",
                    help="trailing-silence window for --vad, in seconds (default: %(default)s)")
+    p.add_argument("--stream", action="store_true", default=config.STREAM,
+                   help="transcribe while you speak: live partials on the console, near-instant "
+                        "final at stop (env VNOTE_STREAM)")
     p.add_argument("--version", action="version", version=f"vnote-flow {__version__}")
     return p.parse_args(argv)
 
 
-def _process(wav: bytes, seconds: float, args: argparse.Namespace) -> None:
-    """One utterance: bytes -> daemon -> (optional clean) -> inject/print."""
-    if seconds < MIN_SECONDS:
-        _say("  (too short; ignored)")
-        return
-    t0 = time.monotonic()
-    try:
-        text, _meta = daemon.transcribe_bytes(wav, language=args.language)
-    except RuntimeError as exc:
-        _say(f"error: transcription failed: {exc}")
-        return
+def _deliver(text: str, args: argparse.Namespace, t0: float) -> None:
+    """Transcript -> spoken commands -> (optional clean) -> inject/print."""
     # With --clean, leave "scratch that" for the LLM — it can merge the correction
     # semantically; the deterministic rule can only cut back to a clause boundary.
     text = apply_commands(text.strip(), scratch=not args.clean)
@@ -89,9 +85,96 @@ def _process(wav: bytes, seconds: float, args: argparse.Namespace) -> None:
         _say("  (injection failed — the text may still be on the clipboard)")
 
 
+def _process(wav: bytes, seconds: float, args: argparse.Namespace) -> None:
+    """One batch utterance: WAV bytes -> daemon -> _deliver."""
+    if seconds < MIN_SECONDS:
+        _say("  (too short; ignored)")
+        return
+    t0 = time.monotonic()
+    try:
+        text, _meta = daemon.transcribe_bytes(wav, language=args.language)
+    except RuntimeError as exc:
+        _say(f"error: transcription failed: {exc}")
+        return
+    _deliver(text, args, t0)
+
+
+class _Streamer:
+    """Pumps new PCM from a Recorder into a daemon StreamSession while recording.
+
+    Shows partials as a live console line. finish() (after Recorder.stop())
+    flushes the tail and returns the final transcript; on any streaming error
+    the caller still holds the full WAV and falls back to the batch route.
+    """
+
+    def __init__(self, recorder: Recorder, language: str | None) -> None:
+        self._recorder = recorder
+        self._session = daemon.StreamSession(language=language)
+        self._sent = 0
+        self._done = threading.Event()
+        self._thread = threading.Thread(target=self._pump, daemon=True)
+        self._thread.start()
+
+    def _push(self) -> None:
+        snapshot = self._recorder.pcm_snapshot()
+        if len(snapshot) > self._sent:
+            partial = self._session.append(snapshot[self._sent :])
+            self._sent = len(snapshot)
+            if partial:
+                tail = partial[-70:].replace("\n", " ")
+                print(f"\r  ≈ {tail:<70}", end="", file=sys.stderr, flush=True)
+
+    def _pump(self) -> None:
+        while not self._done.wait(0.5):
+            try:
+                self._push()
+            except RuntimeError:
+                return  # daemon hiccup — finish() will retry or the caller falls back
+
+    def finish(self) -> tuple[str, dict]:
+        """Flush the tail and return the final (transcript, meta). Call after Recorder.stop()."""
+        self._done.set()
+        self._thread.join(timeout=10)
+        try:
+            self._push()  # everything the pump hadn't sent yet
+        finally:
+            print(file=sys.stderr)  # end the \r partial line
+        return self._session.finish()
+
+
+def _start_streamer(recorder: Recorder, args: argparse.Namespace) -> _Streamer | None:
+    if not args.stream:
+        return None
+    try:
+        return _Streamer(recorder, args.language)
+    except RuntimeError as exc:
+        _say(f"  (streaming unavailable: {exc}; using batch mode)")
+        return None
+
+
+def _finish_take(recorder: Recorder, streamer: _Streamer | None, args: argparse.Namespace) -> None:
+    """Stop the recorder and deliver the take — streamed finish, or batch fallback."""
+    wav, seconds = recorder.stop()
+    _say(f"  {seconds:.1f}s recorded.")
+    if seconds < MIN_SECONDS:
+        _say("  (too short; ignored)")
+        return
+    if streamer is not None:
+        t0 = time.monotonic()
+        try:
+            text, _meta = streamer.finish()
+        except RuntimeError as exc:  # the full WAV is still in hand — never lose the take
+            _say(f"  (streaming failed: {exc}; falling back to batch)")
+        else:
+            _deliver(text, args, t0)
+            return
+    _process(wav, seconds, args)
+
+
 def _run_once(args: argparse.Namespace) -> int:
     rec = Recorder()
     rec.start()
+    streamer = _start_streamer(rec, args)
     if args.vad:
         from .. import vad
 
@@ -104,9 +187,7 @@ def _run_once(args: argparse.Namespace) -> int:
             input()
         except EOFError:
             pass
-    wav, seconds = rec.stop()
-    _say(f"  {seconds:.1f}s recorded.")
-    _process(wav, seconds, args)
+    _finish_take(rec, streamer, args)
     return 0
 
 
@@ -166,6 +247,7 @@ def main(argv: list[str] | None = None) -> int:
     _say(f"ready — press {args.hotkey} to dictate; {stop_hint} (Ctrl-C quits).")
 
     recorder: Recorder | None = None
+    streamer: _Streamer | None = None
     vad_done: threading.Event | None = None
     gen = 0  # recording generation, so a stale vad-stop can't cut the next take
     try:
@@ -180,6 +262,7 @@ def main(argv: list[str] | None = None) -> int:
                 gen += 1
                 recorder = Recorder()
                 recorder.start()
+                streamer = _start_streamer(recorder, args)
                 if args.vad:
                     vad_done = threading.Event()
                     threading.Thread(target=_watch_vad, args=(recorder, gen, vad_done), daemon=True).start()
@@ -188,10 +271,9 @@ def main(argv: list[str] | None = None) -> int:
                 if vad_done is not None:
                     vad_done.set()
                     vad_done = None
-                wav, seconds = recorder.stop()
+                _finish_take(recorder, streamer, args)
                 recorder = None
-                _say(f"  {seconds:.1f}s recorded.")
-                _process(wav, seconds, args)
+                streamer = None
                 _say("ready.")
     except KeyboardInterrupt:
         _say("\nbye.")

@@ -14,21 +14,10 @@ import subprocess
 import sys
 import threading
 import time
-import wave
 
+from ..audio import BYTES_PER_S, wav_bytes
 from ..config import CHANNELS, SAMPLE_RATE
 from ..record import _raw_pcm_cmd
-
-
-def _wav_bytes(pcm: bytes) -> bytes:
-    """Wrap raw s16le PCM in a WAV container, in memory."""
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as w:
-        w.setnchannels(CHANNELS)
-        w.setsampwidth(2)  # s16le
-        w.setframerate(SAMPLE_RATE)
-        w.writeframes(pcm)
-    return buf.getvalue()
 
 
 class Recorder:
@@ -91,4 +80,4 @@ class Recorder:
             pcm = b"".join(self._chunks)
         else:
             pcm = b""
-        return _wav_bytes(pcm), len(pcm) / (2 * CHANNELS * SAMPLE_RATE)
+        return wav_bytes(pcm), len(pcm) / BYTES_PER_S

@@ -9,9 +9,9 @@ from io import BytesIO
 
 import pytest
 
+from vnote.audio import wav_bytes as _wav_bytes
 from vnote.client import inject as inj
 from vnote.client.app import _parse_args
-from vnote.client.capture import _wav_bytes
 from vnote.client.hotkey import to_pynput
 
 # --- hotkey syntax -------------------------------------------------------------
@@ -167,6 +167,7 @@ def test_flow_defaults():
     assert a.inject_method == "auto"
     assert a.once is False and a.to_stdout is False
     assert a.vad is False and a.vad_silence == 1.0
+    assert a.stream is False
 
 
 def test_flow_flags():

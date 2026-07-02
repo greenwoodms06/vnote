@@ -83,3 +83,29 @@ def transcribe_bytes(data: bytes, fmt: str = "wav", language: str | None = None)
 def clean(transcript: str, mode: str = "edit", backend: str = "ollama", model: str | None = None) -> CleanResult:
     d = _post("/clean", {"transcript": transcript, "mode": mode, "backend": backend, "model": model}, timeout=600)
     return CleanResult(title=d["title"], body=d["body"])
+
+
+class StreamSession:
+    """One live-transcription session: append raw PCM chunks, read back partials,
+    then finish() for the final transcript. Raw s16le 16 kHz mono in, text out."""
+
+    def __init__(self, language: str | None = None) -> None:
+        d = _post("/stream/start", {"language": language}, timeout=10)
+        self.sid = d["session_id"]
+
+    def append(self, pcm_chunk: bytes) -> str:
+        """Send new audio; returns the latest partial transcript ('' until the first pass).
+
+        Blocks while the daemon runs a partial pass — call from a pump thread.
+        """
+        req = urllib.request.Request(
+            f"{_base()}/stream/append?sid={quote(self.sid)}",
+            data=pcm_chunk,
+            headers={"Content-Type": "application/octet-stream"},
+        )
+        return _request(req, timeout=60).get("partial", "")
+
+    def finish(self) -> tuple[str, dict]:
+        """Final transcript for everything appended. The session is gone afterwards."""
+        d = _post(f"/stream/finish?sid={quote(self.sid)}", {}, timeout=600)
+        return d["transcript"], d["meta"]

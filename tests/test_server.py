@@ -32,6 +32,7 @@ def _fake_clean(transcript, mode="edit", backend="ollama", model=None):
 @pytest.fixture
 def live_server(monkeypatch):
     _seen.clear()
+    server._sessions.clear()
     monkeypatch.setattr(transcribe, "transcribe", _fake_transcribe)
     monkeypatch.setattr(cleanup, "clean", _fake_clean)
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), server._Handler)
@@ -92,3 +93,51 @@ def test_clean_round_trip(live_server):
 def test_unknown_path_is_404(live_server):
     with pytest.raises(RuntimeError, match="not found"):
         daemon._post("/bogus", {}, timeout=5)
+
+
+# --- streaming sessions --------------------------------------------------------
+
+
+def _wav_frames(wav: bytes) -> int:
+    import wave
+    from io import BytesIO
+
+    with wave.open(BytesIO(wav), "rb") as w:
+        return w.getnframes()
+
+
+def test_stream_round_trip_with_partials(live_server):
+    sess = daemon.StreamSession(language="en")
+    quarter_s = b"\x01\x00" * 4_000  # 0.25 s of PCM
+    assert sess.append(quarter_s) == ""  # below the 0.5 s partial threshold
+    assert sess.append(quarter_s) == "fake transcript"  # threshold crossed -> partial pass
+    assert _wav_frames(_seen["bytes"]) == 8_000  # partial saw the full 0.5 s buffer
+    assert _seen["language"] == "en"
+
+    text, _meta = sess.finish()
+    assert text == "fake transcript"
+    assert _wav_frames(_seen["bytes"]) == 8_000  # final saw everything appended
+
+    with pytest.raises(RuntimeError, match="unknown stream session"):  # finish() drops the session
+        sess.append(quarter_s)
+
+
+def test_stream_finish_without_audio_is_an_error(live_server):
+    sess = daemon.StreamSession()
+    with pytest.raises(RuntimeError, match="no audio"):
+        sess.finish()
+
+
+def test_stream_unknown_sid_is_404(live_server):
+    sess = daemon.StreamSession()
+    sess.sid = "nope"
+    with pytest.raises(RuntimeError, match="unknown stream session"):
+        sess.append(b"\x00\x00")
+
+
+def test_stream_sessions_expire(live_server):
+    sess = daemon.StreamSession()
+    server._sessions[sess.sid].last_seen -= server._STREAM_TTL_S + 1
+    daemon.StreamSession()  # any /stream/start sweeps expired sessions
+    with pytest.raises(RuntimeError, match="unknown stream session"):
+        sess.append(b"\x00\x00")

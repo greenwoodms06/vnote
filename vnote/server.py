@@ -15,11 +15,13 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import __version__, config
+from .audio import BYTES_PER_S, wav_bytes
 
 _infer_lock = threading.Lock()
 _started = 0.0
@@ -30,6 +32,66 @@ def _warm() -> str:
 
     transcribe._load_model()
     return transcribe._device or "cpu"
+
+
+def _transcribe_pcm(pcm: bytes, language: str | None) -> tuple[str, dict]:
+    """Transcribe raw s16le 16 kHz mono PCM (via a temp WAV; serialized on the lock)."""
+    from .transcribe import transcribe
+
+    fd, name = tempfile.mkstemp(prefix="vnote-stream-", suffix=".wav")
+    tmp = Path(name)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(wav_bytes(pcm))
+        with _infer_lock:
+            return transcribe(tmp, language=language)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+# --- streaming sessions (vnote-flow --stream) --------------------------------
+#
+# Chunked HTTP instead of WebSockets (stdlib has none): the client POSTs raw
+# PCM chunks into a session; every >=0.5 s of new audio triggers a synchronous
+# re-transcription of the whole buffer whose text is returned as the partial.
+# Partials are best-effort; only /stream/finish must not fail.
+
+_MIN_NEW_PCM = BYTES_PER_S // 2  # re-transcribe after >=0.5 s of new audio
+_STREAM_TTL_S = 120.0  # drop sessions this long after their last chunk
+
+_sessions: dict[str, _StreamSession] = {}
+_sessions_lock = threading.Lock()
+
+
+class _StreamSession:
+    def __init__(self, language: str | None) -> None:
+        self.language = language
+        self.buf = bytearray()
+        self.partial = ""
+        self.last_seen = time.monotonic()
+        self._transcribed = 0  # buffer length at the last partial pass
+
+    def append(self, chunk: bytes) -> str:
+        self.buf += chunk
+        self.last_seen = time.monotonic()
+        if len(self.buf) - self._transcribed >= _MIN_NEW_PCM:
+            snapshot = bytes(self.buf)
+            try:
+                self.partial, _ = _transcribe_pcm(snapshot, self.language)
+                self._transcribed = len(snapshot)
+            except Exception:  # noqa: BLE001 - partials are best-effort
+                pass
+        return self.partial
+
+    def finish(self) -> tuple[str, dict]:
+        return _transcribe_pcm(bytes(self.buf), self.language)
+
+
+def _sweep_sessions() -> None:
+    cutoff = time.monotonic() - _STREAM_TTL_S
+    with _sessions_lock:
+        for sid in [s for s, sess in _sessions.items() if sess.last_seen < cutoff]:
+            del _sessions[sid]
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -88,6 +150,16 @@ class _Handler(BaseHTTPRequestHandler):
         finally:
             tmp.unlink(missing_ok=True)
 
+    def _stream_session(self, url) -> tuple[str, _StreamSession] | None:
+        """Look up ?sid=...; sends the 404 itself when the session is unknown/expired."""
+        sid = (parse_qs(url.query).get("sid") or [""])[0]
+        with _sessions_lock:
+            sess = _sessions.get(sid)
+        if sess is None:
+            self._send(404, {"error": f"unknown stream session: {sid!r}"})
+            return None
+        return sid, sess
+
     def do_POST(self) -> None:
         try:
             url = urlparse(self.path)
@@ -111,6 +183,30 @@ class _Handler(BaseHTTPRequestHandler):
                     model=data.get("model"),
                 )
                 self._send(200, {"title": result.title, "body": result.body})
+            elif url.path == "/stream/start":
+                data = self._read_json()
+                _sweep_sessions()
+                sid = uuid.uuid4().hex
+                with _sessions_lock:
+                    _sessions[sid] = _StreamSession(data.get("language"))
+                self._send(200, {"session_id": sid})
+            elif url.path == "/stream/append":
+                found = self._stream_session(url)
+                if found is None:
+                    return
+                n = int(self.headers.get("Content-Length", 0) or 0)
+                self._send(200, {"partial": found[1].append(self.rfile.read(n) if n else b"")})
+            elif url.path == "/stream/finish":
+                found = self._stream_session(url)
+                if found is None:
+                    return
+                sid, sess = found
+                with _sessions_lock:
+                    _sessions.pop(sid, None)
+                if not sess.buf:
+                    return self._send(400, {"error": "no audio received"})
+                text, meta = sess.finish()
+                self._send(200, {"transcript": text, "meta": meta})
             else:
                 self._send(404, {"error": "not found"})
         except Exception as exc:  # noqa: BLE001
