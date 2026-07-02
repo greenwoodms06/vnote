@@ -6,6 +6,7 @@
     vnote --raw                transcript only, skip the LLM cleanup
     vnote --backend claude     use the optional Claude cloud backend instead of Ollama
     vnote --redo DIR           re-run cleanup on a saved note (skips transcription)
+    vnote --serve              keep models warm in a localhost daemon (faster runs)
     vnote --doctor             check the environment; vnote --config / --setup
 """
 
@@ -53,6 +54,8 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--keep-temp-audio", action="store_true",
                    help="when recording, also keep the temp wav if writing fails")
     # Utility actions (each short-circuits the normal flow).
+    p.add_argument("--serve", action="store_true",
+                   help="run the warm-model daemon in the foreground (Ctrl-C to stop)")
     p.add_argument("--doctor", action="store_true", help="check the environment and exit")
     p.add_argument("--config", action="store_true", dest="show_config", help="print resolved configuration and exit")
     p.add_argument("--setup", action="store_true", help="(re-)run the interactive first-run setup and exit")
@@ -176,6 +179,10 @@ def main(argv: list[str] | None = None) -> int:
         from . import doctor
 
         return doctor.run(args.backend or config.backend())
+    if args.serve:
+        from . import server
+
+        return server.serve()
 
     # First-run setup (interactive TTY only; a no-op otherwise), then resolve the
     # backend: explicit --backend flag > saved choice / env > built-in default.
