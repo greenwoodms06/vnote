@@ -20,6 +20,7 @@ import threading
 import time
 
 from .. import __version__, config, daemon
+from ..commands import apply_commands
 from ..config import MODES
 from .capture import Recorder
 from .inject import inject
@@ -62,7 +63,7 @@ def _process(wav: bytes, seconds: float, args: argparse.Namespace) -> None:
     except RuntimeError as exc:
         _say(f"error: transcription failed: {exc}")
         return
-    text = text.strip()
+    text = apply_commands(text.strip())
     if not text:
         _say("  (no speech detected)")
         return
