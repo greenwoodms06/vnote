@@ -53,6 +53,8 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
                    help="re-run cleanup on a saved note dir or transcript.txt (no re-transcription)")
     p.add_argument("--keep-temp-audio", action="store_true",
                    help="when recording, also keep the temp wav if writing fails")
+    p.add_argument("--no-daemon", action="store_true",
+                   help="ignore any running vnote daemon; load models in-process for this run")
     # Utility actions (each short-circuits the normal flow).
     p.add_argument("--serve", action="store_true",
                    help="run the warm-model daemon in the foreground (Ctrl-C to stop)")
@@ -88,6 +90,20 @@ def _show_config() -> int:
     print(f"  daemon      : {daemon_host}:{daemon_port} (start one with `vnote --serve`)")
     print(f"  notes_dir   : {config.NOTES_DIR}")
     return 0
+
+
+def _pipeline(no_daemon: bool):
+    """Return (transcribe_fn, clean_fn): daemon-backed if one is up, else in-process."""
+    if not no_daemon:
+        from . import daemon
+
+        if daemon.is_up():
+            _say("  (using warm daemon)")
+            return daemon.transcribe, daemon.clean
+    from .cleanup import clean
+    from .transcribe import transcribe
+
+    return transcribe, clean
 
 
 # --- re-clean an existing note (no transcription) ---------------------------
@@ -136,10 +152,10 @@ def _do_redo(args: argparse.Namespace, backend: str) -> int:
         return 1
 
     _say(f"Re-cleaning via {backend} ({args.mode}) ...")
-    from .cleanup import clean
+    _, clean_fn = _pipeline(args.no_daemon)
 
     try:
-        result = clean(transcript, mode=args.mode, backend=backend, model=args.model)
+        result = clean_fn(transcript, mode=args.mode, backend=backend, model=args.model)
     except (RuntimeError, ValueError) as exc:
         print(f"error: cleanup failed: {exc}", file=sys.stderr)
         return 1
@@ -219,12 +235,11 @@ def main(argv: list[str] | None = None) -> int:
         audio_path = tmp_wav
 
     # 2. Transcribe.
+    transcribe_fn, clean_fn = _pipeline(args.no_daemon)
     _say("Transcribing ...")
     t0 = time.monotonic()
-    from .transcribe import transcribe
-
     try:
-        transcript, tmeta = transcribe(audio_path, language=args.language)
+        transcript, tmeta = transcribe_fn(audio_path, language=args.language)
     except Exception as exc:  # noqa: BLE001
         print(f"error: transcription failed: {exc}", file=sys.stderr)
         return 1
@@ -246,10 +261,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         _say(f"Cleaning up via {backend} ({args.mode}) ...")
         t0 = time.monotonic()
-        from .cleanup import clean
-
         try:
-            result = clean(transcript, mode=args.mode, backend=backend, model=args.model)
+            result = clean_fn(transcript, mode=args.mode, backend=backend, model=args.model)
         except (NotImplementedError, RuntimeError, ValueError) as exc:
             _say(f"\nCleanup unavailable: {exc}\n")
             _say("Keeping the raw transcript instead.")
