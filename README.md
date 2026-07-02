@@ -177,6 +177,21 @@ elevated/admin windows (Windows UIPI — fails silently); Wayland needs `wtype`
 or `ydotool` for injection. Flow mode is ephemeral by design — it doesn't write
 session folders; use `vnote` for notes you want to keep.
 
+### Always-on (optional)
+
+`vnote-flow --tray` swaps the console for a tray icon (green ready / red
+recording / amber processing) with toggles for cleanup and VAD — pair it with
+`pythonw` for a fully windowless client.
+
+- **Windows client:** `powershell -ExecutionPolicy Bypass -File
+  scripts\install-windows-client.ps1 -Startup` installs the `[flow]` extra and
+  drops a windowless startup shortcut (re-run it after every update).
+- **Daemon on native Linux:** `cp scripts/vnote-daemon.service
+  ~/.config/systemd/user/ && systemctl --user enable --now vnote-daemon`.
+- **Daemon in WSL at Windows logon:** Task Scheduler → new task, action
+  `wsl.exe -d <YourDistro> -- ~/.local/bin/vnote --serve`, trigger "At log on",
+  and tick "Hidden". (Or just leave a terminal running `vnote --serve`.)
+
 ### Check & configure
 
 ```bash
@@ -221,6 +236,7 @@ directory is auto-loaded (see `.env.example`).
 | `VNOTE_VAD` | off (vnote-flow: `1` = auto-stop on silence) |
 | `VNOTE_VAD_SILENCE` | `1.0` (seconds of pause that end an utterance) |
 | `VNOTE_STREAM` | off (vnote-flow: `1` = transcribe while speaking) |
+| `VNOTE_TRAY` | off (vnote-flow: `1` = system-tray icon) |
 | `VNOTE_DICTATION_MODEL` | the `ollama_model` (small/fast model for `--clean` dictation) |
 | `VNOTE_VOCAB` | `~/.config/vnote/vocab.txt` (hotwords + corrections) |
 | `ANTHROPIC_API_KEY` | — (required for `--backend claude`) |

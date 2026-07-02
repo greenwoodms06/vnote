@@ -1,0 +1,21 @@
+# systemd user unit for the vnote warm-model daemon (native Linux).
+#
+# Install (after `uv tool install`, which puts vnote in ~/.local/bin):
+#   mkdir -p ~/.config/systemd/user
+#   cp scripts/vnote-daemon.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now vnote-daemon
+#
+# Logs: journalctl --user -u vnote-daemon -f
+
+[Unit]
+Description=vnote warm-model daemon (faster-whisper on localhost:8760)
+After=default.target
+
+[Service]
+ExecStart=%h/.local/bin/vnote --serve
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
