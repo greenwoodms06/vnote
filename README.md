@@ -130,10 +130,17 @@ into whatever app has focus (clipboard-paste, with your old clipboard restored).
 ```bash
 vnote --serve                        # somewhere: the warm daemon
 vnote-flow                           # hotkey loop (needs the [flow] extra: pynput)
-vnote-flow --clean light             # LLM-clean before pasting (default: raw, fastest)
+vnote-flow --vad                     # auto-stop after a ~1s pause (no second key press)
+vnote-flow --clean                   # fast LLM 'dictation' cleanup before pasting (default: raw)
 vnote-flow --once --print            # one hotkey-free cycle to stdout (works anywhere)
 vnote-flow --inject type             # per-character typing instead of pasting
 ```
+
+Spoken commands **"new line"**, **"new paragraph"** and **"scratch that"** are
+applied to the transcript by rule, even without `--clean`. With `--clean`, a
+light dictation prompt also fixes punctuation/fillers and handles the fuzzier
+commands ("period", "quote … unquote") — point `VNOTE_DICTATION_MODEL` at a
+small model (e.g. `llama3.2:3b-instruct`) to keep it fast.
 
 Run it on the machine that owns the **keyboard and mic**:
 
@@ -141,6 +148,9 @@ Run it on the machine that owns the **keyboard and mic**:
 |---|---|---|
 | Native Linux / Windows / macOS | same machine | same machine (`pip install 'vnote[flow]'`) |
 | **WSL2** | inside WSL (CUDA) | **Windows Python** — `pip install 'vnote[flow]'`; localhost reaches the WSL daemon out of the box |
+
+> If `vnote-flow` isn't on PATH after a Windows `pip install`, run it as
+> `py -m vnote.client.app` instead.
 
 Configure with `VNOTE_HOTKEY` (e.g. `ctrl+alt+d`) and `VNOTE_INJECT`
 (`auto`/`paste`/`type`). Caveats: a non-elevated client can't type into
@@ -189,6 +199,9 @@ directory is auto-loaded (see `.env.example`).
 | `VNOTE_DAEMON_PORT` | `8760` |
 | `VNOTE_HOTKEY` | `ctrl+shift+space` (vnote-flow) |
 | `VNOTE_INJECT` | `auto` (vnote-flow: `paste`/`type`) |
+| `VNOTE_VAD` | off (vnote-flow: `1` = auto-stop on silence) |
+| `VNOTE_VAD_SILENCE` | `1.0` (seconds of pause that end an utterance) |
+| `VNOTE_DICTATION_MODEL` | the `ollama_model` (small/fast model for `--clean` dictation) |
 | `ANTHROPIC_API_KEY` | — (required for `--backend claude`) |
 
 ## Development
