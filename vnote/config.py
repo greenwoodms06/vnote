@@ -82,6 +82,15 @@ CHANNELS = 1
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
 CLAUDE_MODEL = os.environ.get("VNOTE_CLAUDE_MODEL", "claude-sonnet-4-6")
 
+# --- warm daemon (`vnote --serve`) ---
+DAEMON_HOST = os.environ.get("VNOTE_DAEMON_HOST", "127.0.0.1")
+DAEMON_PORT = int(os.environ.get("VNOTE_DAEMON_PORT", "8760"))
+
+
+def daemon_addr() -> tuple[str, int]:
+    return DAEMON_HOST, DAEMON_PORT
+
+
 # Cleanup intensity modes.
 MODES = ("light", "edit", "summary")
 DEFAULT_MODE = "edit"

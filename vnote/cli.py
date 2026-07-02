@@ -81,6 +81,8 @@ def _show_config() -> int:
     print(f"  claude_model: {CLAUDE_MODEL}")
     print(f"  whisper     : {config.WHISPER_MODEL}")
     print(f"  ollama_host : {config.OLLAMA_HOST}")
+    daemon_host, daemon_port = config.daemon_addr()
+    print(f"  daemon      : {daemon_host}:{daemon_port} (start one with `vnote --serve`)")
     print(f"  notes_dir   : {config.NOTES_DIR}")
     return 0
 
