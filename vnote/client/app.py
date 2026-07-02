@@ -67,7 +67,9 @@ def _process(wav: bytes, seconds: float, args: argparse.Namespace) -> None:
     except RuntimeError as exc:
         _say(f"error: transcription failed: {exc}")
         return
-    text = apply_commands(text.strip())
+    # With --clean, leave "scratch that" for the LLM — it can merge the correction
+    # semantically; the deterministic rule can only cut back to a clause boundary.
+    text = apply_commands(text.strip(), scratch=not args.clean)
     if not text:
         _say("  (no speech detected)")
         return
@@ -77,6 +79,7 @@ def _process(wav: bytes, seconds: float, args: argparse.Namespace) -> None:
             text = result.body.strip()  # body only — no title header when typing into an app
         except RuntimeError as exc:
             _say(f"  (cleanup failed: {exc}; using the raw transcript)")
+            text = apply_commands(text)  # no LLM after all — scratch deterministically
     _say(f"  {len(text)} chars in {round(time.monotonic() - t0, 1)}s")
     if args.to_stdout:
         print(text, flush=True)

@@ -32,13 +32,19 @@ def _drop_last_clause(text: str) -> str:
     return text[: cut + 1] if cut != -1 else ""
 
 
-def apply_commands(text: str) -> str:
-    """Apply spoken editing commands; text without commands passes through unchanged."""
+def apply_commands(text: str, scratch: bool = True) -> str:
+    """Apply spoken editing commands; text without commands passes through unchanged.
+
+    Pass ``scratch=False`` when an LLM cleanup pass follows: it sees the intact
+    "scratch that" and can merge the correction semantically ("at three, scratch
+    that, at four" -> "at four" here, but "the meeting is at four" with context),
+    which a string rule can't.
+    """
     # Line-break commands first, so a spoken "new line" already counts as a
     # boundary when "scratch that" looks backwards for one.
     text = _NEW_PARAGRAPH.sub("\n\n", text)
     text = _NEW_LINE.sub("\n", text)
-    while (m := _SCRATCH.search(text)) is not None:
+    while scratch and (m := _SCRATCH.search(text)) is not None:
         kept = _drop_last_clause(text[: m.start()])
         text = f"{kept} {text[m.end():]}".strip()
     return re.sub(r"[ \t]*\n[ \t]*", "\n", text).strip()
