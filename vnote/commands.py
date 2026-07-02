@@ -19,21 +19,20 @@ _NEW_PARAGRAPH = re.compile(r",?\s*\bnew paragraph\b[,.]?\s*", re.IGNORECASE)
 _NEW_LINE = re.compile(r",?\s*\bnew ?line\b[,.]?\s*", re.IGNORECASE)
 _SCRATCH = re.compile(r",?\s*\bscratch that\b[,.!]?\s*", re.IGNORECASE)
 
-_SENTENCE_SPLIT = re.compile(r"(?<=[.!?\n])\s+")
-
-
 def _drop_last_sentence(text: str) -> str:
-    parts = _SENTENCE_SPLIT.split(text.strip())
-    return " ".join(parts[:-1]) if len(parts) > 1 else ""
+    """Everything up to (and including) the last sentence boundary; '' if there is none."""
+    text = text.rstrip().rstrip(".!?")  # a trailing ender belongs to the sentence being dropped
+    cut = max(text.rfind(ch) for ch in ".!?\n")
+    return text[: cut + 1] if cut != -1 else ""
 
 
 def apply_commands(text: str) -> str:
     """Apply spoken editing commands; text without commands passes through unchanged."""
-    # "scratch that" deletes back to the previous sentence boundary. Applied first,
-    # left to right, so a scratched region can't leave line breaks behind.
+    # Line-break commands first, so a spoken "new line" already counts as a
+    # sentence boundary when "scratch that" looks backwards for one.
+    text = _NEW_PARAGRAPH.sub("\n\n", text)
+    text = _NEW_LINE.sub("\n", text)
     while (m := _SCRATCH.search(text)) is not None:
         kept = _drop_last_sentence(text[: m.start()])
         text = f"{kept} {text[m.end():]}".strip()
-    text = _NEW_PARAGRAPH.sub("\n\n", text)
-    text = _NEW_LINE.sub("\n", text)
-    return text.strip()
+    return re.sub(r"[ \t]*\n[ \t]*", "\n", text).strip()

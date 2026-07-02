@@ -42,3 +42,14 @@ def test_scratch_that_at_start_is_a_noop_delete():
 
 def test_multiple_scratches():
     assert apply_commands("One. Two. Scratch that. Three. Scratch that. Four.") == "One. Four."
+
+
+def test_scratch_respects_spoken_new_line_boundary():
+    # no written punctuation at all — the spoken "new line" is the only boundary
+    assert apply_commands("first point new line second point scratch that third point") == (
+        "first point\nthird point"
+    )
+
+
+def test_scratch_without_any_boundary_drops_everything_before():
+    assert apply_commands("all of this goes scratch that only this stays") == "only this stays"
