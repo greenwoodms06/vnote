@@ -1,0 +1,118 @@
+"""Tests for the daemon client and CLI routing (stub HTTP server; no models, no GPU)."""
+
+import json
+import socket
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+import pytest
+
+from vnote import cli, config, daemon
+from vnote.cleanup import CleanResult
+
+
+def _closed_port() -> int:
+    """A port number nothing is listening on (bound briefly, then released)."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+class _StubHandler(BaseHTTPRequestHandler):
+    responses: dict = {}  # path -> (status_code, json_payload), set per test
+
+    def log_message(self, *args):
+        pass
+
+    def _reply(self):
+        code, payload = self.responses.get(self.path, (404, {"error": "not found"}))
+        body = json.dumps(payload).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    do_GET = _reply
+    do_POST = _reply
+
+
+@pytest.fixture
+def stub_daemon(monkeypatch):
+    """Serve canned JSON on an ephemeral port and point config.daemon_addr at it."""
+    _StubHandler.responses = {}
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), _StubHandler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    monkeypatch.setattr(config, "daemon_addr", lambda: ("127.0.0.1", httpd.server_address[1]))
+    yield _StubHandler
+    httpd.shutdown()
+    httpd.server_close()
+
+
+# --- client ------------------------------------------------------------------
+
+
+def test_is_up_false_when_nothing_listening(monkeypatch):
+    monkeypatch.setattr(config, "daemon_addr", lambda: ("127.0.0.1", _closed_port()))
+    assert daemon.is_up() is False
+
+
+def test_client_round_trip(stub_daemon):
+    stub_daemon.responses = {
+        "/health": (200, {"status": "ok", "device": "cuda"}),
+        "/transcribe": (200, {"transcript": "hello world", "meta": {"language": "en"}}),
+        "/clean": (200, {"title": "A Title", "body": "The body."}),
+    }
+    assert daemon.is_up() is True
+    text, meta = daemon.transcribe(Path("/some/audio.wav"), language="en")
+    assert text == "hello world"
+    assert meta == {"language": "en"}
+    result = daemon.clean("hello world", mode="edit")
+    assert isinstance(result, CleanResult)
+    assert (result.title, result.body) == ("A Title", "The body.")
+
+
+def test_http_error_body_raises_runtime_error(stub_daemon):
+    stub_daemon.responses = {"/transcribe": (400, {"error": "no such file: /nope.wav"})}
+    with pytest.raises(RuntimeError, match="no such file"):
+        daemon.transcribe(Path("/nope.wav"))
+
+
+def test_error_in_200_body_raises_runtime_error(stub_daemon):
+    stub_daemon.responses = {"/clean": (200, {"error": "model exploded"})}
+    with pytest.raises(RuntimeError, match="model exploded"):
+        daemon.clean("some transcript")
+
+
+# --- cli routing ---------------------------------------------------------------
+
+
+def test_pipeline_prefers_daemon_when_up(monkeypatch):
+    monkeypatch.setattr(daemon, "is_up", lambda: True)
+    transcribe_fn, clean_fn = cli._pipeline(no_daemon=False)
+    assert transcribe_fn is daemon.transcribe
+    assert clean_fn is daemon.clean
+
+
+def test_pipeline_falls_back_in_process(monkeypatch):
+    from vnote.cleanup import clean
+    from vnote.transcribe import transcribe
+
+    monkeypatch.setattr(daemon, "is_up", lambda: False)
+    transcribe_fn, clean_fn = cli._pipeline(no_daemon=False)
+    assert transcribe_fn is transcribe
+    assert clean_fn is clean
+
+
+def test_no_daemon_forces_in_process_without_probing(monkeypatch):
+    from vnote.cleanup import clean
+    from vnote.transcribe import transcribe
+
+    def _boom():
+        raise AssertionError("is_up() must not be called with --no-daemon")
+
+    monkeypatch.setattr(daemon, "is_up", _boom)
+    transcribe_fn, clean_fn = cli._pipeline(no_daemon=True)
+    assert transcribe_fn is transcribe
+    assert clean_fn is clean

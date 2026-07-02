@@ -10,6 +10,8 @@ def test_defaults():
     assert a.raw is False
     assert a.no_clipboard is False
     assert a.audio is None
+    assert a.serve is False
+    assert a.no_daemon is False
 
 
 def test_mode_flags_are_mutually_exclusive_values():
