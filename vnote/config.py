@@ -97,6 +97,7 @@ INJECT = os.environ.get("VNOTE_INJECT", "auto")  # auto | paste | type
 VAD = os.environ.get("VNOTE_VAD", "").strip().lower() in ("1", "true", "yes", "on")
 VAD_SILENCE = float(os.environ.get("VNOTE_VAD_SILENCE", "1.0"))  # trailing-silence stop window, seconds
 STREAM = os.environ.get("VNOTE_STREAM", "").strip().lower() in ("1", "true", "yes", "on")
+TRAY = os.environ.get("VNOTE_TRAY", "").strip().lower() in ("1", "true", "yes", "on")
 
 
 # Cleanup intensity modes.

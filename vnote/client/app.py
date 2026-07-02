@@ -60,6 +60,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--stream", action="store_true", default=config.STREAM,
                    help="transcribe while you speak: live partials on the console, near-instant "
                         "final at stop (env VNOTE_STREAM)")
+    p.add_argument("--tray", action="store_true", default=config.TRAY,
+                   help="show a system-tray status icon with toggles (needs the [flow] extra; "
+                        "env VNOTE_TRAY)")
     p.add_argument("--version", action="version", version=f"vnote-flow {__version__}")
     return p.parse_args(argv)
 
@@ -166,6 +169,21 @@ class _Streamer:
         return self._session.finish()
 
 
+def _start_tray(args: argparse.Namespace, events: queue.Queue):
+    """A running Tray, or None (missing packages / no tray host) — console mode either way."""
+    if not args.tray:
+        return None
+    try:
+        from .tray import Tray
+
+        tray = Tray(args, events)
+        tray.start()
+        return tray
+    except Exception as exc:  # noqa: BLE001 - ImportError, no display, no tray host, ...
+        _say(f"  (tray unavailable: {exc}; running console-only)")
+        return None
+
+
 def _start_streamer(recorder: Recorder, args: argparse.Namespace) -> _Streamer | None:
     if not args.stream:
         return None
@@ -267,6 +285,7 @@ def main(argv: list[str] | None = None) -> int:
                 return
 
     threading.Thread(target=_listen, daemon=True).start()
+    tray = _start_tray(args, events)
     stop_hint = "pause to stop (the hotkey also stops)" if args.vad else "press the hotkey again to stop"
     _say(f"ready — press {args.hotkey} to dictate; {stop_hint} (Ctrl-C quits).")
 
@@ -280,6 +299,9 @@ def main(argv: list[str] | None = None) -> int:
             if kind == "quit":
                 print(f"error: hotkey listener failed: {listen_error[0]}", file=sys.stderr)
                 return 1
+            if kind == "exit":  # tray menu Quit
+                _say("bye.")
+                return 0
             if kind == "vad-stop" and (recorder is None or event_gen != gen):
                 continue
             if recorder is None:
@@ -290,18 +312,27 @@ def main(argv: list[str] | None = None) -> int:
                 if args.vad:
                     vad_done = threading.Event()
                     threading.Thread(target=_watch_vad, args=(recorder, gen, vad_done), daemon=True).start()
+                if tray:
+                    tray.state("recording")
                 _say(f"● recording — {'pause' if args.vad else 'press the hotkey again'} to stop.")
             else:
                 if vad_done is not None:
                     vad_done.set()
                     vad_done = None
+                if tray:
+                    tray.state("processing")
                 _finish_take(recorder, streamer, args)
                 recorder = None
                 streamer = None
+                if tray:
+                    tray.state("ready")
                 _say("ready.")
     except KeyboardInterrupt:
         _say("\nbye.")
         return 0
+    finally:
+        if tray:
+            tray.stop()
 
 
 if __name__ == "__main__":

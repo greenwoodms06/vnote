@@ -169,6 +169,7 @@ def test_flow_defaults():
     assert a.vad is False and a.vad_silence == 1.0
     assert a.stream is False
     assert a.tone is None
+    assert a.tray is False
 
 
 def test_flow_flags():

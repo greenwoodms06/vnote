@@ -1,6 +1,6 @@
 [project]
 name = "vnote"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local voice notes: record -> faster-whisper transcription -> LLM cleanup, straight to your clipboard"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,9 +22,9 @@ dependencies = [
 [project.optional-dependencies]
 # Optional Claude cleanup backend (`vnote --backend claude`). Needs ANTHROPIC_API_KEY.
 claude = ["anthropic>=0.40"]
-# Flow-mode client (`vnote-flow`): global hotkey + keystroke injection. Install on
-# the machine that owns the keyboard (on WSL setups: Windows Python).
-flow = ["pynput>=1.7"]
+# Flow-mode client (`vnote-flow`): global hotkey + keystroke injection + tray icon.
+# Install on the machine that owns the keyboard (on WSL setups: Windows Python).
+flow = ["pynput>=1.7", "pystray>=0.19", "pillow>=10"]
 # Dev tooling (tests + lint).
 dev = ["pytest>=8", "ruff>=0.6"]
 
