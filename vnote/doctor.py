@@ -53,6 +53,25 @@ def _check_daemon() -> tuple[str, str]:
     return WARN, f"no daemon at {host}:{port} — models load per run; start one: `vnote --serve`"
 
 
+def _check_flow() -> tuple[str, str]:
+    """Flow-mode readiness on *this* machine (on WSL the client usually runs Windows-side)."""
+    from .client import inject as _inject
+
+    plat = _inject._platform()
+    chord = _inject._paste_chord_cmd(plat)
+    try:
+        import pynput  # noqa: F401
+        have_pynput = True
+    except Exception:  # noqa: BLE001 - missing package or no display backend
+        have_pynput = False
+    if chord is None and not have_pynput:
+        extra = " or wtype/ydotool" if plat == "wayland" else ""
+        return WARN, f"flow: no injection path on {plat} — install the `[flow]` extra (pynput){extra}"
+    via = Path(chord[0]).name if chord else "pynput"
+    hotkey = "hotkey ready (pynput)" if have_pynput else "hotkey here needs `pynput` (`[flow]` extra)"
+    return OK, f"flow: inject via {via} ({plat}); {hotkey}"
+
+
 def _check_backend(backend: str) -> tuple[str, str]:
     if backend == "ollama":
         from .cleanup import _ollama_get
@@ -82,7 +101,14 @@ def run(backend: str) -> int:
     print(f"notes  : {config.NOTES_DIR}")
     print()
 
-    rows = [_check_recorder(), _check_gpu(), _check_clipboard(), _check_daemon(), _check_backend(backend)]
+    rows = [
+        _check_recorder(),
+        _check_gpu(),
+        _check_clipboard(),
+        _check_daemon(),
+        _check_flow(),
+        _check_backend(backend),
+    ]
     failures = 0
     for mark, msg in rows:
         print(f"  {mark:<6} {msg}")
