@@ -121,6 +121,33 @@ a daemon is up, and `VNOTE_DAEMON_HOST` / `VNOTE_DAEMON_PORT` move the address.
 It binds to localhost only, with no auth — it's a single-user convenience, not a
 network service.
 
+### Flow mode — dictate into any app (experimental)
+
+`vnote-flow` is a thin push-to-talk client for the daemon: press
+**ctrl+shift+space** anywhere, speak, press it again — the transcript is pasted
+into whatever app has focus (clipboard-paste, with your old clipboard restored).
+
+```bash
+vnote --serve                        # somewhere: the warm daemon
+vnote-flow                           # hotkey loop (needs the [flow] extra: pynput)
+vnote-flow --clean light             # LLM-clean before pasting (default: raw, fastest)
+vnote-flow --once --print            # one hotkey-free cycle to stdout (works anywhere)
+vnote-flow --inject type             # per-character typing instead of pasting
+```
+
+Run it on the machine that owns the **keyboard and mic**:
+
+| Setup | Daemon | `vnote-flow` |
+|---|---|---|
+| Native Linux / Windows / macOS | same machine | same machine (`pip install 'vnote[flow]'`) |
+| **WSL2** | inside WSL (CUDA) | **Windows Python** — `pip install 'vnote[flow]'`; localhost reaches the WSL daemon out of the box |
+
+Configure with `VNOTE_HOTKEY` (e.g. `ctrl+alt+d`) and `VNOTE_INJECT`
+(`auto`/`paste`/`type`). Caveats: a non-elevated client can't type into
+elevated/admin windows (Windows UIPI — fails silently); Wayland needs `wtype`
+or `ydotool` for injection. Flow mode is ephemeral by design — it doesn't write
+session folders; use `vnote` for notes you want to keep.
+
 ### Check & configure
 
 ```bash
@@ -160,6 +187,8 @@ directory is auto-loaded (see `.env.example`).
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` |
 | `VNOTE_DAEMON_HOST` | `127.0.0.1` |
 | `VNOTE_DAEMON_PORT` | `8760` |
+| `VNOTE_HOTKEY` | `ctrl+shift+space` (vnote-flow) |
+| `VNOTE_INJECT` | `auto` (vnote-flow: `paste`/`type`) |
 | `ANTHROPIC_API_KEY` | — (required for `--backend claude`) |
 
 ## Development
