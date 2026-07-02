@@ -93,6 +93,8 @@ vnote --no-clipboard       # don't touch the clipboard
 vnote --redo DIR           # re-run cleanup on a saved note (skips transcription)
 vnote --stdout             # also print the note to stdout (for piping)
 vnote -o, --open           # open the new note in $EDITOR afterward
+vnote --serve              # keep models warm in a localhost daemon (see below)
+vnote --no-daemon          # ignore a running daemon; load models in-process
 ```
 
 You can dictate formatting instructions as you talk ("make that a bulleted list",
@@ -100,6 +102,24 @@ You can dictate formatting instructions as you talk ("make that a bulleted list"
 
 `--redo` is handy for trying a different cleanup intensity without re-transcribing
 (transcription is the slow part) — e.g. `vnote --redo voice-notes/2026-… --summary`.
+
+### Warm daemon (optional, faster)
+
+Normally every run loads the Whisper model into VRAM first — several seconds
+before transcription even starts. Leave a daemon running and repeat runs skip
+that entirely:
+
+```bash
+vnote --serve              # terminal A: loads the model once, then serves on 127.0.0.1:8760
+vnote memo.m4a             # terminal B: detects the daemon and starts transcribing immediately
+```
+
+The CLI probes for a daemon on each run and silently falls back to in-process
+models when none is up, so nothing else changes — same output, same files.
+`--no-daemon` forces in-process for a single run, `vnote --doctor` shows whether
+a daemon is up, and `VNOTE_DAEMON_HOST` / `VNOTE_DAEMON_PORT` move the address.
+It binds to localhost only, with no auth — it's a single-user convenience, not a
+network service.
 
 ### Check & configure
 
@@ -138,6 +158,8 @@ directory is auto-loaded (see `.env.example`).
 | `VNOTE_OLLAMA_MODEL` | `qwen2.5:14b-instruct` |
 | `VNOTE_CLAUDE_MODEL` | `claude-sonnet-4-6` |
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` |
+| `VNOTE_DAEMON_HOST` | `127.0.0.1` |
+| `VNOTE_DAEMON_PORT` | `8760` |
 | `ANTHROPIC_API_KEY` | — (required for `--backend claude`) |
 
 ## Development
