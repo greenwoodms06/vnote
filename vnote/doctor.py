@@ -44,6 +44,15 @@ def _check_clipboard() -> tuple[str, str]:
     return WARN, "no clipboard tool (clip.exe/wl-copy/xclip/xsel/pbcopy) — notes are still saved to disk"
 
 
+def _check_daemon() -> tuple[str, str]:
+    from . import daemon
+
+    host, port = config.daemon_addr()
+    if daemon.is_up():
+        return OK, f"daemon: up at {host}:{port} (models warm)"
+    return WARN, f"no daemon at {host}:{port} — models load per run; start one: `vnote --serve`"
+
+
 def _check_backend(backend: str) -> tuple[str, str]:
     if backend == "ollama":
         from .cleanup import _ollama_get
@@ -73,7 +82,7 @@ def run(backend: str) -> int:
     print(f"notes  : {config.NOTES_DIR}")
     print()
 
-    rows = [_check_recorder(), _check_gpu(), _check_clipboard(), _check_backend(backend)]
+    rows = [_check_recorder(), _check_gpu(), _check_clipboard(), _check_daemon(), _check_backend(backend)]
     failures = 0
     for mark, msg in rows:
         print(f"  {mark:<6} {msg}")
