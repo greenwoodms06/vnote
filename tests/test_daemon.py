@@ -64,7 +64,7 @@ def test_client_round_trip(stub_daemon):
         "/transcribe": (200, {"transcript": "hello world", "meta": {"language": "en"}}),
         "/clean": (200, {"title": "A Title", "body": "The body."}),
     }
-    assert daemon.is_up() is True
+    assert daemon.is_up(timeout=5) is True  # generous: don't let a busy test box flake the probe
     text, meta = daemon.transcribe(Path("/some/audio.wav"), language="en")
     assert text == "hello world"
     assert meta == {"language": "en"}

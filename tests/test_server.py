@@ -44,7 +44,7 @@ def live_server(monkeypatch):
 
 
 def test_health(live_server):
-    h = daemon.health()
+    h = daemon.health(timeout=5)  # generous: the 0.3s production probe can flake on a busy test box
     assert h is not None
     assert h["status"] == "ok"
     assert h["whisper_model"] == config.WHISPER_MODEL
