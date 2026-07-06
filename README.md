@@ -177,6 +177,21 @@ elevated/admin windows (Windows UIPI — fails silently); Wayland needs `wtype`
 or `ydotool` for injection. Flow mode is ephemeral by design — it doesn't write
 session folders; use `vnote` for notes you want to keep.
 
+### Dictation history
+
+Every flow take is saved by default — audio, raw transcript, and cleaned
+text — as an append-only daily log next to your batch notes:
+
+    voice-notes/flow/
+      2026-07-06.md               # one ## entry per take: raw, clean, audio link
+      audio/20260706-143207.wav
+
+`--no-history` (also a tray toggle) turns saving off for a session. Granular
+switches, all on by default: `VNOTE_HISTORY_AUDIO=0` keeps the text but drops
+the WAVs; `VNOTE_HISTORY_RAW=0` / `VNOTE_HISTORY_CLEAN=0` omit those fields.
+The daemon owns the files (they land in its `voice-notes/`); the client sends
+each take to `POST /history` best-effort — dictation never blocks on history.
+
 ### Always-on (optional)
 
 `vnote-flow --tray` swaps the console for a tray icon (green ready / red
@@ -237,6 +252,10 @@ directory is auto-loaded (see `.env.example`).
 | `VNOTE_VAD_SILENCE` | `1.0` (seconds of pause that end an utterance) |
 | `VNOTE_STREAM` | off (vnote-flow: `1` = transcribe while speaking) |
 | `VNOTE_TRAY` | off (vnote-flow: `1` = system-tray icon) |
+| `VNOTE_HISTORY` | on (vnote-flow: `0` = don't save takes to `voice-notes/flow/`) |
+| `VNOTE_HISTORY_AUDIO` | on (vnote-flow: `0` = keep text, drop the WAVs) |
+| `VNOTE_HISTORY_RAW` | on (vnote-flow: `0` = omit raw transcripts) |
+| `VNOTE_HISTORY_CLEAN` | on (vnote-flow: `0` = omit cleaned text) |
 | `VNOTE_DICTATION_MODEL` | the `ollama_model` (small/fast model for `--clean` dictation) |
 | `VNOTE_VOCAB` | `~/.config/vnote/vocab.txt` (hotwords + corrections) |
 | `ANTHROPIC_API_KEY` | — (required for `--backend claude`) |
