@@ -151,3 +151,29 @@ def test_stream_expired_sid_404s_without_a_new_start(live_server):
     with pytest.raises(RuntimeError, match="unknown stream session"):
         sess.append(b"\x00\x00")
     assert sess.sid not in server._sessions  # buffer freed, not just refused
+
+
+# --- flow history ----------------------------------------------------------------
+
+
+def test_history_round_trip(live_server, tmp_path, monkeypatch):
+    from vnote import history
+
+    monkeypatch.setattr(history, "NOTES_DIR", tmp_path)
+    daemon.log_history(wav=b"RIFFDATA", raw="um hello", clean="Hello.",
+                       seconds=3.2, mode="dictation", tone="casual")
+    md = next((tmp_path / "flow").glob("*.md")).read_text(encoding="utf-8")
+    assert "**raw:** um hello" in md and "**clean:** Hello." in md
+    wavs = list((tmp_path / "flow" / "audio").glob("*.wav"))
+    assert len(wavs) == 1 and wavs[0].read_bytes() == b"RIFFDATA"
+    assert f"[audio](audio/{wavs[0].name})" in md
+
+
+def test_history_without_audio_writes_text_only(live_server, tmp_path, monkeypatch):
+    from vnote import history
+
+    monkeypatch.setattr(history, "NOTES_DIR", tmp_path)
+    daemon.log_history(wav=None, raw="just text", clean=None, seconds=1.5)
+    md = next((tmp_path / "flow").glob("*.md")).read_text(encoding="utf-8")
+    assert "**raw:** just text" in md
+    assert not (tmp_path / "flow" / "audio").exists()

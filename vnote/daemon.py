@@ -8,6 +8,7 @@ can call either interchangeably.
 
 from __future__ import annotations
 
+import base64
 import json
 import urllib.error
 import urllib.request
@@ -116,3 +117,23 @@ class StreamSession:
         """Final transcript for everything appended. The session is gone afterwards."""
         d = _post(f"/stream/finish?sid={quote(self.sid)}", {}, timeout=600)
         return d["transcript"], d["meta"]
+
+
+def log_history(
+    wav: bytes | None,
+    raw: str | None,
+    clean: str | None,
+    seconds: float,
+    mode: str | None = None,
+    tone: str | None = None,
+) -> None:
+    """Save one flow take to the daemon's history store (voice-notes/flow/)."""
+    payload = {
+        "wav_b64": base64.b64encode(wav).decode() if wav else None,
+        "raw": raw,
+        "clean": clean,
+        "seconds": seconds,
+        "mode": mode,
+        "tone": tone,
+    }
+    _post("/history", payload, timeout=30)

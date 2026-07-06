@@ -8,6 +8,7 @@ guaranteed concurrency-safe).
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -191,6 +192,19 @@ class _Handler(BaseHTTPRequestHandler):
                     tone=data.get("tone"),
                 )
                 self._send(200, {"title": result.title, "body": result.body})
+            elif url.path == "/history":
+                data = self._read_json()
+                from . import history
+
+                history.append_take(
+                    raw=data.get("raw"),
+                    clean=data.get("clean"),
+                    wav=base64.b64decode(data["wav_b64"]) if data.get("wav_b64") else None,
+                    seconds=float(data.get("seconds") or 0.0),
+                    mode=data.get("mode"),
+                    tone=data.get("tone"),
+                )
+                self._send(200, {"saved": True})
             elif url.path == "/stream/start":
                 data = self._read_json()
                 _sweep_sessions()
