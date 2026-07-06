@@ -327,6 +327,14 @@ def main(argv: list[str] | None = None) -> int:
             if kind == "exit":  # tray menu Quit
                 _say("bye.")
                 return 0
+            if kind == "promote":  # tray action: last take -> its own note folder
+                try:
+                    name = daemon.promote("last")
+                except RuntimeError as exc:
+                    _say(f"  (promote failed: {exc})")
+                else:
+                    _say(f"  → note: {name}")
+                continue
             if kind == "vad-stop" and (recorder is None or event_gen != gen):
                 continue
             if recorder is None:

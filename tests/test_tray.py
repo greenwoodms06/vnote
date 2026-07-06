@@ -53,3 +53,10 @@ def test_tray_menu_toggles_shared_flags_and_quits():
     by_text["Quit"](tray._icon)
     assert events.get_nowait() == ("exit", 0)
     tray.stop()
+
+
+def test_tray_promote_action_pushes_event():
+    tray, _args, events = _tray()
+    by_text = {str(i.text): i for i in list(tray._icon.menu.items)}
+    by_text["Save last take as note"](tray._icon)
+    assert events.get_nowait() == ("promote", 0)

@@ -47,6 +47,8 @@ class Tray:
             pystray.MenuItem("LLM cleanup", toggle_clean, checked=lambda item: bool(args.clean)),
             pystray.MenuItem("Auto-stop (VAD)", toggle_vad, checked=lambda item: bool(args.vad)),
             pystray.MenuItem("Save history", toggle_history, checked=lambda item: bool(args.history)),
+            pystray.MenuItem("Save last take as note",
+                             lambda icon, item: events.put(("promote", 0))),
             pystray.MenuItem("Quit", lambda icon, item: events.put(("exit", 0))),
         )
         # ASCII-only title: pystray's X11 backend writes it latin-1.
