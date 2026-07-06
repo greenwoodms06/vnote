@@ -255,6 +255,25 @@ after speech-stop for a short utterance, and hide it with streaming partials:
 
 ---
 
+## 9. Post-0.2.0 backlog
+
+Cleanups the 2026-07-06 pre-push review (34 commits, two-axis) flagged as
+worthwhile but non-urgent:
+
+- One shared per-platform dispatch map for `client/inject.py` /
+  `client/window.py` — the wsl/wayland/x11/macos if-cascade currently repeats
+  four times — made public so `doctor.py` stops importing private helpers.
+- Per-mode profiles in `cleanup.py`: the `mode == "dictation"` special-casing
+  appears in three places; `_MODE_INSTRUCTIONS` could carry a profile instead.
+- A small `Vocab` type in `vocab.py` replacing the positional cache tuple.
+
+Larger candidates (open, not committed to): PyPI publish · Parakeet backend
+(§3) · small-dictation-model benchmark (§7 measure-early) · asciinema README
+demo · a lightweight flow-mode history (§6 keeps "no folder per
+micro-utterance", but an append-only transcript log stays open).
+
+---
+
 ## Sources
 
 1. Wispr Flow engineering blog — https://wisprflow.ai/post/technical-challenges

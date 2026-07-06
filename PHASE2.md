@@ -16,6 +16,9 @@ Three additive pieces:
 3. **A deterministic spoken-command pre-pass** (`vnote/commands.py`) — "new
    line", "new paragraph", "scratch that" handled by string rules before (or
    without) any LLM, so `--raw`-style flow injection gets them too.
+   *(Amended, ee86ded: when `--clean` is active, "scratch that" is deferred to
+   the LLM prompt instead — one editor, no double-apply; the deterministic rule
+   still runs on the no-LLM fallback path.)*
 
 ## Design constraints
 
@@ -55,6 +58,8 @@ the note-mode CLI, continuous/always-listening mode, punctuation-word commands.
 - [ ] `clean(mode="dictation")` returns plain text (no `TITLE:`), and the live
       daemon `/clean` round-trip works against local Ollama.
 - [ ] `apply_commands("foo new line bar")` → `"foo\nbar"`; "scratch that" drops
-      the previous sentence; plain prose passes through byte-identical.
+      the last clause — back to the nearest `.,!?;:` or line break *(amended
+      from "the previous sentence", a527a9d: mid-sentence corrections are the
+      common case)*; plain prose passes through byte-identical.
 - [ ] CI stays green with no heavy deps installed (VAD tests skip cleanly).
 - [ ] No new entries in `[project.dependencies]`; ruff + pytest pass.
