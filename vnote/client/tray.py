@@ -39,10 +39,14 @@ class Tray:
         def toggle_vad(icon, item) -> None:
             args.vad = not args.vad
 
+        def toggle_history(icon, item) -> None:
+            args.history = not args.history
+
         menu = pystray.Menu(
             pystray.MenuItem("vnote-flow", None, enabled=False),
             pystray.MenuItem("LLM cleanup", toggle_clean, checked=lambda item: bool(args.clean)),
             pystray.MenuItem("Auto-stop (VAD)", toggle_vad, checked=lambda item: bool(args.vad)),
+            pystray.MenuItem("Save history", toggle_history, checked=lambda item: bool(args.history)),
             pystray.MenuItem("Quit", lambda icon, item: events.put(("exit", 0))),
         )
         # ASCII-only title: pystray's X11 backend writes it latin-1.

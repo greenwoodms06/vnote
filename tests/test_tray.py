@@ -16,7 +16,7 @@ pytest.importorskip("PIL")
 def _tray():
     from vnote.client.tray import Tray
 
-    args = argparse.Namespace(clean=None, vad=False)
+    args = argparse.Namespace(clean=None, vad=False, history=True)
     events: queue.Queue = queue.Queue()
     try:
         return Tray(args, events), args, events
@@ -44,6 +44,11 @@ def test_tray_menu_toggles_shared_flags_and_quits():
 
     by_text["Auto-stop (VAD)"](tray._icon)
     assert args.vad is True
+
+    by_text["Save history"](tray._icon)
+    assert args.history is False
+    by_text["Save history"](tray._icon)
+    assert args.history is True
 
     by_text["Quit"](tray._icon)
     assert events.get_nowait() == ("exit", 0)
