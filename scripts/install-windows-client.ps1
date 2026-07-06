@@ -4,7 +4,7 @@
 #   ... -Startup            also drop a pythonw shortcut into shell:startup
 #   ... -RepoPath C:\src\vnote -Flags "--tray --vad --stream"
 #
-# Re-run after every `git pull` — the Windows install is a copy, not editable.
+# Re-run after every `git pull` - the Windows install is a copy, not editable.
 
 param(
     [string]$RepoPath = "D:\Projects\vnote",
@@ -20,7 +20,7 @@ py -m vnote.client.app --version
 
 if ($Startup) {
     # pythonw = no console window; the --tray icon is the UI. Ask the interpreter
-    # where it lives — pythonw.exe sits next to python.exe, not next to py.exe.
+    # where it lives - pythonw.exe sits next to python.exe, not next to py.exe.
     $pyw = py -c "import sys, os; print(os.path.join(os.path.dirname(sys.executable), 'pythonw.exe'))"
     if (-not (Test-Path $pyw)) { $pyw = (Get-Command pythonw).Source }
     $dir = [Environment]::GetFolderPath("Startup")
@@ -31,7 +31,7 @@ if ($Startup) {
     $lnk.Description = "vnote flow dictation client"
     $lnk.Save()
     Write-Host "Startup shortcut created: $dir\vnote-flow.lnk"
-    Write-Host "(it needs the daemon; auto-start that too — see the README)"
+    Write-Host "(it needs the daemon; auto-start that too - see the README)"
 }
 
 Write-Host "Done. Run now with:  py -m vnote.client.app $Flags"
