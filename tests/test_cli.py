@@ -26,3 +26,31 @@ def test_backend_and_audio_and_flags():
     assert a.backend == "claude"
     assert a.raw is True
     assert a.no_clipboard is True
+
+
+# --- --promote -------------------------------------------------------------------
+
+
+def test_promote_flag_in_process(monkeypatch, tmp_path, capsys):
+    from datetime import datetime
+
+    from vnote import cli, daemon, history, output
+
+    monkeypatch.setattr(daemon, "is_up", lambda timeout=0.3: False)  # force in-process path
+    monkeypatch.setattr(history, "NOTES_DIR", tmp_path)
+    monkeypatch.setattr(output, "NOTES_DIR", tmp_path)
+    history.append_take(raw="promote me please and thanks", clean=None, wav=None,
+                        seconds=1.0, mode=None, tone=None, when=datetime(2026, 7, 6, 9, 0, 0))
+    assert cli.main(["--promote"]) == 0
+    assert "promoted" in capsys.readouterr().err
+    assert any(p.name.startswith("2026-07-06-0900-") for p in tmp_path.iterdir())
+
+
+def test_promote_flag_error_exits_nonzero(monkeypatch, tmp_path, capsys):
+    from vnote import cli, daemon, history, output
+
+    monkeypatch.setattr(daemon, "is_up", lambda timeout=0.3: False)
+    monkeypatch.setattr(history, "NOTES_DIR", tmp_path)
+    monkeypatch.setattr(output, "NOTES_DIR", tmp_path)
+    assert cli.main(["--promote"]) == 1
+    assert "error:" in capsys.readouterr().err

@@ -6,6 +6,7 @@
     vnote --raw                transcript only, skip the LLM cleanup
     vnote --backend claude     use the optional Claude cloud backend instead of Ollama
     vnote --redo DIR           re-run cleanup on a saved note (skips transcription)
+    vnote --promote [TAKE]     turn a dictated flow take into its own note folder
     vnote --serve              keep models warm in a localhost daemon (faster runs)
     vnote --doctor             check the environment; vnote --config / --setup
 """
@@ -58,6 +59,10 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     # Utility actions (each short-circuits the normal flow).
     p.add_argument("--serve", action="store_true",
                    help="run the warm-model daemon in the foreground (Ctrl-C to stop)")
+    p.add_argument("--promote", nargs="?", const="last", metavar="TAKE",
+                   help="promote a flow-history take to its own note folder: bare = the last "
+                        "take, 'HH:MM:SS' = that take in the newest day, "
+                        "'YYYY-MM-DD HH:MM:SS' = explicit")
     p.add_argument("--doctor", action="store_true", help="check the environment and exit")
     p.add_argument("--config", action="store_true", dest="show_config", help="print resolved configuration and exit")
     p.add_argument("--setup", action="store_true", help="(re-)run the interactive first-run setup and exit")
@@ -111,6 +116,30 @@ def _pipeline(no_daemon: bool):
     from .transcribe import transcribe
 
     return transcribe, clean
+
+
+def _do_promote(args: argparse.Namespace) -> int:
+    """Daemon-first (it may be appending takes concurrently); in-process fallback."""
+    name = None
+    if not args.no_daemon:
+        from . import daemon
+
+        if daemon.is_up():
+            try:
+                name = daemon.promote(args.promote)
+            except RuntimeError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
+    if name is None:
+        from . import history
+
+        try:
+            name = history.promote_take(args.promote).name
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+    _say(f"📁 promoted → {config.NOTES_DIR / name}")
+    return 0
 
 
 # --- re-clean an existing note (no transcription) ---------------------------
@@ -206,6 +235,8 @@ def main(argv: list[str] | None = None) -> int:
         from . import server
 
         return server.serve()
+    if args.promote:
+        return _do_promote(args)
 
     # First-run setup (interactive TTY only; a no-op otherwise), then resolve the
     # backend: explicit --backend flag > saved choice / env > built-in default.
