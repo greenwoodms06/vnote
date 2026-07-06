@@ -124,12 +124,12 @@ class _Handler(BaseHTTPRequestHandler):
         else:
             self._send(404, {"error": "not found"})
 
-    def _transcribe(self, audio: Path, language: str | None) -> None:
+    def _transcribe(self, audio: Path, language: str | None) -> dict:
         from .transcribe import transcribe
 
         with _infer_lock:
             text, meta = transcribe(audio, language=language)
-        self._send(200, {"transcript": text, "meta": meta})
+        return {"transcript": text, "meta": meta}
 
     def _transcribe_body(self, query: dict[str, list[str]]) -> None:
         """Bytes mode: the request body is the audio itself (client machines don't
@@ -146,9 +146,12 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             with os.fdopen(fd, "wb") as f:
                 f.write(self.rfile.read(n))
-            self._transcribe(tmp, language)
+            payload = self._transcribe(tmp, language)
         finally:
+            # unlink BEFORE responding: the response releases the client, and
+            # callers may observe (or assert) that the upload is already gone
             tmp.unlink(missing_ok=True)
+        self._send(200, payload)
 
     def _stream_session(self, url) -> tuple[str, _StreamSession] | None:
         """Look up ?sid=...; sends the 404 itself when the session is unknown/expired."""
@@ -171,7 +174,7 @@ class _Handler(BaseHTTPRequestHandler):
                 audio = Path(data["audio_path"]).expanduser()
                 if not audio.is_file():
                     return self._send(400, {"error": f"no such file: {audio}"})
-                self._transcribe(audio, data.get("language"))
+                self._send(200, self._transcribe(audio, data.get("language")))
             elif url.path == "/clean":
                 data = self._read_json()
                 from .cleanup import clean
