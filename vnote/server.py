@@ -106,8 +106,11 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _body_len(self) -> int:
+        return int(self.headers.get("Content-Length", 0) or 0)
+
     def _read_json(self) -> dict:
-        n = int(self.headers.get("Content-Length", 0) or 0)
+        n = self._body_len()
         return json.loads(self.rfile.read(n) or b"{}") if n else {}
 
     def do_GET(self) -> None:
@@ -134,7 +137,7 @@ class _Handler(BaseHTTPRequestHandler):
     def _transcribe_body(self, query: dict[str, list[str]]) -> None:
         """Bytes mode: the request body is the audio itself (client machines don't
         share our filesystem). Written to a temp file for the duration of the call."""
-        n = int(self.headers.get("Content-Length", 0) or 0)
+        n = self._body_len()
         if n <= 0:
             return self._send(400, {"error": "empty audio body"})
         fmt = (query.get("format") or ["wav"])[0].lower()
@@ -155,6 +158,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _stream_session(self, url) -> tuple[str, _StreamSession] | None:
         """Look up ?sid=...; sends the 404 itself when the session is unknown/expired."""
+        _sweep_sessions()  # enforce the TTL on every touch, not only /stream/start
         sid = (parse_qs(url.query).get("sid") or [""])[0]
         with _sessions_lock:
             sess = _sessions.get(sid)
@@ -198,7 +202,7 @@ class _Handler(BaseHTTPRequestHandler):
                 found = self._stream_session(url)
                 if found is None:
                     return
-                n = int(self.headers.get("Content-Length", 0) or 0)
+                n = self._body_len()
                 self._send(200, {"partial": found[1].append(self.rfile.read(n) if n else b"")})
             elif url.path == "/stream/finish":
                 found = self._stream_session(url)

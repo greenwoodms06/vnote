@@ -141,3 +141,13 @@ def test_stream_sessions_expire(live_server):
     daemon.StreamSession()  # any /stream/start sweeps expired sessions
     with pytest.raises(RuntimeError, match="unknown stream session"):
         sess.append(b"\x00\x00")
+
+
+def test_stream_expired_sid_404s_without_a_new_start(live_server):
+    # The TTL is enforced on the touch itself — a crashed client's buffer must
+    # not linger until some future /stream/start happens to sweep it.
+    sess = daemon.StreamSession()
+    server._sessions[sess.sid].last_seen -= server._STREAM_TTL_S + 1
+    with pytest.raises(RuntimeError, match="unknown stream session"):
+        sess.append(b"\x00\x00")
+    assert sess.sid not in server._sessions  # buffer freed, not just refused
