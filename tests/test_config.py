@@ -70,3 +70,15 @@ def test_app_tone_matching(tmp_path, monkeypatch):
     assert config.app_tone_for("#eng-general - Slack") == "casual"
     assert config.app_tone_for("Inbox - Outlook") == "formal"
     assert config.app_tone_for("Notepad") is None
+
+
+def test_env_on_defaults_on_and_honors_off_values(monkeypatch):
+    from vnote import config as cfg
+
+    monkeypatch.delenv("VNOTE_HISTORY_AUDIO", raising=False)
+    assert cfg._env_on("VNOTE_HISTORY_AUDIO") is True
+    for off in ("0", "false", "no", "off"):
+        monkeypatch.setenv("VNOTE_HISTORY_AUDIO", off)
+        assert cfg._env_on("VNOTE_HISTORY_AUDIO") is False
+    monkeypatch.setenv("VNOTE_HISTORY_AUDIO", "1")
+    assert cfg._env_on("VNOTE_HISTORY_AUDIO") is True

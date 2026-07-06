@@ -200,3 +200,71 @@ def test_window_title_cmd_per_platform(monkeypatch):
     monkeypatch.setattr(shutil, "which", lambda name: None)
     assert window._title_cmd("x11") is None
     assert window._title_cmd("wayland") is None
+
+
+# --- history wiring ---------------------------------------------------------------
+
+
+def _history_harness(monkeypatch):
+    """Fake injection + history transport; returns the dict log_history was called with."""
+    from vnote.client import app
+
+    logged = {}
+
+    def fake_log(wav, raw, clean, seconds, mode=None, tone=None):
+        logged.update(wav=wav, raw=raw, clean=clean, seconds=seconds, mode=mode, tone=tone)
+
+    monkeypatch.setattr(app.daemon, "log_history", fake_log)
+    monkeypatch.setattr(app, "inject", lambda text, method=None: True)
+    return app, logged
+
+
+def test_deliver_logs_raw_take(monkeypatch):
+    app, logged = _history_harness(monkeypatch)
+    app._deliver(" hello there ", _parse_args([]), t0=0.0, wav=b"WAV", seconds=2.5)
+    assert logged == {"wav": b"WAV", "raw": "hello there", "clean": None,
+                      "seconds": 2.5, "mode": None, "tone": None}
+
+
+def test_deliver_logs_cleaned_take(monkeypatch):
+    from vnote.cleanup import CleanResult
+
+    app, logged = _history_harness(monkeypatch)
+    monkeypatch.setattr(app.daemon, "clean",
+                        lambda text, **kw: CleanResult(title="", body="Hello there."))
+    app._deliver("um hello there", _parse_args(["--clean", "--tone", "casual"]),
+                 t0=0.0, wav=b"WAV", seconds=3.0)
+    assert logged["raw"] == "um hello there"
+    assert logged["clean"] == "Hello there."
+    assert logged["mode"] == "dictation" and logged["tone"] == "casual"
+
+
+def test_no_history_flag_skips_logging(monkeypatch):
+    app, logged = _history_harness(monkeypatch)
+    app._deliver("hello", _parse_args(["--no-history"]), t0=0.0, wav=b"WAV", seconds=1.0)
+    assert logged == {}
+
+
+def test_history_env_switches_drop_fields(monkeypatch):
+    app, logged = _history_harness(monkeypatch)
+    monkeypatch.setattr(app.config, "HISTORY_AUDIO", False)
+    monkeypatch.setattr(app.config, "HISTORY_RAW", False)
+    app._deliver("hello", _parse_args([]), t0=0.0, wav=b"WAV", seconds=1.0)
+    assert logged["wav"] is None and logged["raw"] is None
+
+
+def test_history_failure_is_one_console_line(monkeypatch, capsys):
+    from vnote.client import app
+
+    def boom(**kw):
+        raise RuntimeError("daemon unreachable: nope")
+
+    monkeypatch.setattr(app.daemon, "log_history", boom)
+    monkeypatch.setattr(app, "inject", lambda text, method=None: True)
+    app._deliver("hello", _parse_args([]), t0=0.0, wav=b"WAV", seconds=1.0)  # must not raise
+    assert "history save failed" in capsys.readouterr().err
+
+
+def test_flow_history_default_and_flag():
+    assert _parse_args([]).history is True
+    assert _parse_args(["--no-history"]).history is False

@@ -96,12 +96,21 @@ def _env_bool(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def _env_on(name: str) -> bool:
+    """Default-on switch: only an explicit 0/false/no/off disables it."""
+    return os.environ.get(name, "").strip().lower() not in ("0", "false", "no", "off")
+
+
 HOTKEY = os.environ.get("VNOTE_HOTKEY", "ctrl+shift+space")
 INJECT = os.environ.get("VNOTE_INJECT", "auto")  # auto | paste | type
 VAD = _env_bool("VNOTE_VAD")
 VAD_SILENCE = float(os.environ.get("VNOTE_VAD_SILENCE", "1.0"))  # trailing-silence stop window, seconds
 STREAM = _env_bool("VNOTE_STREAM")
 TRAY = _env_bool("VNOTE_TRAY")
+HISTORY = _env_on("VNOTE_HISTORY")  # flow takes -> voice-notes/flow/ (PHASE6)
+HISTORY_AUDIO = _env_on("VNOTE_HISTORY_AUDIO")
+HISTORY_RAW = _env_on("VNOTE_HISTORY_RAW")
+HISTORY_CLEAN = _env_on("VNOTE_HISTORY_CLEAN")
 
 
 # Cleanup intensity modes.

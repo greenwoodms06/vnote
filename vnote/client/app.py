@@ -63,6 +63,8 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--tray", action="store_true", default=config.TRAY,
                    help="show a system-tray status icon with toggles (needs the [flow] extra; "
                         "env VNOTE_TRAY)")
+    p.add_argument("--no-history", action="store_false", dest="history", default=config.HISTORY,
+                   help="don't save takes to the daemon's flow history (env VNOTE_HISTORY=0)")
     p.add_argument("--version", action="version", version=f"vnote-flow {__version__}")
     return p.parse_args(argv)
 
@@ -86,20 +88,24 @@ def _app_tone() -> str | None:
     return tone
 
 
-def _deliver(text: str, args: argparse.Namespace, t0: float) -> None:
-    """Transcript -> spoken commands -> (optional clean) -> inject/print."""
+def _deliver(text: str, args: argparse.Namespace, t0: float,
+             wav: bytes | None = None, seconds: float = 0.0) -> None:
+    """Transcript -> spoken commands -> (optional clean) -> inject/print -> history."""
+    raw = text.strip()  # the ASR transcript pre-commands — what history logs as raw
     # With --clean, leave "scratch that" for the LLM — it can merge the correction
     # semantically; the deterministic rule can only cut back to a clause boundary.
-    text = apply_commands(text.strip(), scratch=not args.clean)
+    text = apply_commands(raw, scratch=not args.clean)
     if not text:
         _say("  (no speech detected)")
         return
+    cleaned = None
+    tone = None
     if args.clean:
         tone = args.tone or _app_tone()
         try:
             result = daemon.clean(text, mode=args.clean, backend=args.backend or config.backend(),
                                   model=args.model, tone=tone)
-            text = result.body.strip()  # body only — no title header when typing into an app
+            cleaned = text = result.body.strip()  # body only — no title header when typing into an app
         except RuntimeError as exc:
             _say(f"  (cleanup failed: {exc}; using the raw transcript)")
             text = apply_commands(text)  # no LLM after all — scratch deterministically
@@ -110,6 +116,25 @@ def _deliver(text: str, args: argparse.Namespace, t0: float) -> None:
         _say("  → injected")
     else:
         _say("  (injection failed — the text may still be on the clipboard)")
+    _log_history(raw, cleaned, wav, seconds, args, tone)
+
+
+def _log_history(raw: str, cleaned: str | None, wav: bytes | None, seconds: float,
+                 args: argparse.Namespace, tone: str | None) -> None:
+    """Best-effort history save — one console line on failure, never an exception."""
+    if not args.history:
+        return
+    try:
+        daemon.log_history(
+            wav=wav if config.HISTORY_AUDIO else None,
+            raw=raw if config.HISTORY_RAW else None,
+            clean=cleaned if config.HISTORY_CLEAN else None,
+            seconds=seconds,
+            mode=args.clean if cleaned is not None else None,
+            tone=tone,
+        )
+    except RuntimeError as exc:
+        _say(f"  (history save failed: {exc})")
 
 
 def _process(wav: bytes, seconds: float, args: argparse.Namespace) -> None:
@@ -123,7 +148,7 @@ def _process(wav: bytes, seconds: float, args: argparse.Namespace) -> None:
     except RuntimeError as exc:
         _say(f"error: transcription failed: {exc}")
         return
-    _deliver(text, args, t0)
+    _deliver(text, args, t0, wav=wav, seconds=seconds)
 
 
 class _Streamer:
@@ -208,7 +233,7 @@ def _finish_take(recorder: Recorder, streamer: _Streamer | None, args: argparse.
         except RuntimeError as exc:  # the full WAV is still in hand — never lose the take
             _say(f"  (streaming failed: {exc}; falling back to batch)")
         else:
-            _deliver(text, args, t0)
+            _deliver(text, args, t0, wav=wav, seconds=seconds)
             return
     _process(wav, seconds, args)
 
