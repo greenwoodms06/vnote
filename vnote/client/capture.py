@@ -13,7 +13,6 @@ import signal
 import subprocess
 import sys
 import threading
-import time
 
 from ..audio import BYTES_PER_S, wav_bytes
 from ..config import CHANNELS, SAMPLE_RATE
@@ -29,10 +28,8 @@ class Recorder:
         self._pcm = io.BytesIO()
         self._chunks: list[bytes] = []
         self._stream = None
-        self._started = 0.0
 
     def start(self) -> None:
-        self._started = time.monotonic()
         cmd = _raw_pcm_cmd()
         if cmd is not None:
             self._proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)

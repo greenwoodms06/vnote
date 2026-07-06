@@ -92,12 +92,16 @@ def daemon_addr() -> tuple[str, int]:
 
 
 # --- flow client (`vnote-flow`) ---
+def _env_bool(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
 HOTKEY = os.environ.get("VNOTE_HOTKEY", "ctrl+shift+space")
 INJECT = os.environ.get("VNOTE_INJECT", "auto")  # auto | paste | type
-VAD = os.environ.get("VNOTE_VAD", "").strip().lower() in ("1", "true", "yes", "on")
+VAD = _env_bool("VNOTE_VAD")
 VAD_SILENCE = float(os.environ.get("VNOTE_VAD_SILENCE", "1.0"))  # trailing-silence stop window, seconds
-STREAM = os.environ.get("VNOTE_STREAM", "").strip().lower() in ("1", "true", "yes", "on")
-TRAY = os.environ.get("VNOTE_TRAY", "").strip().lower() in ("1", "true", "yes", "on")
+STREAM = _env_bool("VNOTE_STREAM")
+TRAY = _env_bool("VNOTE_TRAY")
 
 
 # Cleanup intensity modes.
