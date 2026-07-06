@@ -192,6 +192,16 @@ the WAVs; `VNOTE_HISTORY_RAW=0` / `VNOTE_HISTORY_CLEAN=0` omit those fields.
 The daemon owns the files (they land in its `voice-notes/`); the client sends
 each take to `POST /history` best-effort — dictation never blocks on history.
 
+A take that turns out to be a real note can be **promoted** — rebuilt as its
+own dated-titled session folder, same layout as batch notes, with the WAV
+moved in and a pointer left under the take's timestamp in the daily log:
+
+    vnote --promote                    # the last take
+    vnote --promote 14:32:07           # that take, newest day
+    vnote --promote "2026-07-05 09:15:00"
+
+The tray menu's "Save last take as note" does the same with one click.
+
 ### Always-on (optional)
 
 `vnote-flow --tray` swaps the console for a tray icon (green ready / red
