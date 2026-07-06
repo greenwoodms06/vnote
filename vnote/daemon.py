@@ -137,3 +137,8 @@ def log_history(
         "tone": tone,
     }
     _post("/history", payload, timeout=30)
+
+
+def promote(take: str = "last") -> str:
+    """Promote a logged flow take to its own note folder; returns the folder name."""
+    return _post("/promote", {"take": take}, timeout=30)["note"]

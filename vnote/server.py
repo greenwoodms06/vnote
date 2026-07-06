@@ -205,6 +205,15 @@ class _Handler(BaseHTTPRequestHandler):
                     tone=data.get("tone"),
                 )
                 self._send(200, {"saved": True})
+            elif url.path == "/promote":
+                data = self._read_json()
+                from . import history
+
+                try:
+                    session = history.promote_take(data.get("take") or "last")
+                except ValueError as exc:
+                    return self._send(400, {"error": str(exc)})
+                self._send(200, {"note": session.name})
             elif url.path == "/stream/start":
                 data = self._read_json()
                 _sweep_sessions()

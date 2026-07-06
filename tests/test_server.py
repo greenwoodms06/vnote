@@ -177,3 +177,26 @@ def test_history_without_audio_writes_text_only(live_server, tmp_path, monkeypat
     md = next((tmp_path / "flow").glob("*.md")).read_text(encoding="utf-8")
     assert "**raw:** just text" in md
     assert not (tmp_path / "flow" / "audio").exists()
+
+
+def test_promote_round_trip(live_server, tmp_path, monkeypatch):
+    from vnote import history, output
+
+    monkeypatch.setattr(history, "NOTES_DIR", tmp_path)
+    monkeypatch.setattr(output, "NOTES_DIR", tmp_path)
+    daemon.log_history(wav=b"RIFFDATA", raw="promote me", clean="Promote me.",
+                       seconds=2.0, mode="dictation", tone=None)
+    name = daemon.promote("last")
+    assert (tmp_path / name / "note.md").exists()
+    assert (tmp_path / name / "audio.wav").read_bytes() == b"RIFFDATA"
+    day = next((tmp_path / "flow").glob("*.md")).read_text(encoding="utf-8")
+    assert f"[note](../{name}/note.md)" in day
+
+
+def test_promote_empty_store_is_client_error(live_server, tmp_path, monkeypatch):
+    from vnote import history, output
+
+    monkeypatch.setattr(history, "NOTES_DIR", tmp_path)
+    monkeypatch.setattr(output, "NOTES_DIR", tmp_path)
+    with pytest.raises(RuntimeError, match="no flow history"):
+        daemon.promote("last")
