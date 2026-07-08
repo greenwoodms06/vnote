@@ -1,291 +1,127 @@
-# vnote — local voice notes, from your mic to your clipboard
+# vnote — local voice notes & dictation, on your own GPU
 
 [![CI](https://github.com/greenwoodms06/vnote/actions/workflows/ci.yml/badge.svg)](https://github.com/greenwoodms06/vnote/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A small command-line tool for **dictated notes**: speak (or hand it an audio file),
-transcribe locally on your **GPU** with [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
-(`large-v3-turbo`), tidy the transcript with a **local LLM**, and drop the cleaned
-Markdown straight onto your **clipboard**. Everything stays on your machine by default.
+Speak, and get clean Markdown back — transcribed locally with
+[faster-whisper](https://github.com/SYSTRAN/faster-whisper) on your **GPU**, tidied by a
+**local LLM**, on your machine by default. Two ways to use it:
 
-It's built for the workflow that the polished dictation apps skip: a **CLI on WSL2 /
-Linux** that records through WSLg's PulseAudio bridge, runs Whisper on CUDA, and pastes
-into whatever you're typing in. If you're on macOS and want point-and-talk dictation,
-[yapper](https://github.com/ahmedlhanafy/yapper) or
-[local-whisper](https://github.com/luisalima/local-whisper) are more polished choices.
+- **Notes** — `vnote` records (or takes an audio file), transcribes, cleans it up, and
+  drops the note on your clipboard. Great for memos and long-form dictation you want to keep.
+- **Flow** — a global hotkey pastes what you say into *whatever app has focus*, anywhere.
+  Wispr-Flow-style dictation, but fully local.
 
-> This is a personal tool I use daily and am sharing as-is — no support promised, but
-> issues and PRs are welcome.
+> A personal tool I use daily, shared as-is — no support promised, but issues and PRs are welcome.
+> On macOS and want polished point-and-talk? [yapper](https://github.com/ahmedlhanafy/yapper)
+> or [local-whisper](https://github.com/luisalima/local-whisper) fit better.
 
 ## Platform support
 
-| Platform | Mic recording | GPU transcription | Clipboard | Status |
+| Platform | Mic recording | Transcription | Clipboard | Status |
 |---|---|---|---|---|
-| **WSL2** (Windows) | `parec` via WSLg | CUDA | `clip.exe` | **tested — primary** |
+| **WSL2** (Windows) | `parec` via WSLg | CUDA | `clip.exe` | **primary — tested** |
 | **Native Linux** | `parec` / `pw-record` / `sounddevice` | CUDA | `wl-copy` / `xclip` / `xsel` | **tested** |
 | Windows (native) | `sounddevice` | CUDA | `clip.exe` | untested — should work |
-| macOS | `sounddevice` | CPU only (no CUDA) | `pbcopy` | untested — CPU-only |
+| macOS | `sounddevice` | CPU only | `pbcopy` | untested — CPU-only, slower |
 | any | — (file mode) | CUDA / CPU | best-effort | processing audio files works everywhere |
 
 Processing an existing file (`vnote memo.m4a`) needs no audio setup at all.
 
 ## Install
 
-Quickest — installs the `vnote` command in its own isolated environment:
+```bash
+uv tool install git+https://github.com/greenwoodms06/vnote   # puts `vnote` on your PATH
+```
+
+You also need:
+
+- **[Ollama](https://ollama.com)** for local cleanup — `ollama pull qwen2.5:14b-instruct`
+  (default; ~10 GB VRAM — lighter options exist). Or skip it with `--backend claude` (cloud).
+- On **WSL**, the recorder: `sudo apt install -y pulseaudio-utils`.
+
+The first transcription downloads the Whisper model (~1.6 GB). Then run `vnote --doctor`
+to check your setup — it names anything missing and how to fix it.
+
+<sub>Hacking on it? Clone and `uv sync && uv pip install -e .`, then run commands as
+`uv run vnote …`. See the [User Guide](docs/USER_GUIDE.md#install-from-a-clone).</sub>
+
+## Quickstart — Notes
 
 ```bash
-uv tool install git+https://github.com/greenwoodms06/vnote
+vnote                  # record from the mic; press Enter to stop
+vnote memo.m4a         # …or process an existing audio file
 ```
 
-Or from a clone (recommended if you want to hack on it):
+You get a cleaned note on your clipboard and saved under `voice-notes/`. That's it.
+
+The default cleanup reorganizes into headings and lists; use `--light` to only fix
+grammar and fillers, `--summary` to condense, or `--raw` for the bare transcript.
+You can dictate formatting as you talk — *"make that a bulleted list"*, *"scratch that"*,
+*"put a heading here"* — and the cleanup follows along.
+
+First run asks two quick questions (cleanup backend, and model size for Ollama) and
+saves your choice. See the [User Guide](docs/USER_GUIDE.md) for every flag.
+
+## Quickstart — Flow (dictate into any app)
+
+Flow adds a global push-to-talk hotkey that pastes into the focused app. It needs a
+warm **daemon** (holds the models in VRAM) plus the **`vnote-flow`** client.
 
 ```bash
-uv sync                       # creates .venv with deps
-uv pip install -e .           # installs the `vnote` command
-# optional: cloud cleanup backend
-uv pip install -e '.[claude]' # adds the Anthropic SDK for `--backend claude`
+pip install 'vnote[flow]'    # 1. add the flow extra (pynput, tray icon)
+vnote --serve                # 2. start the warm daemon  → 127.0.0.1:8760
+vnote-flow                   # 3. hotkey loop: press ctrl+shift+space, speak, press again
 ```
 
-> **Invoking it from a clone:** the `vnote` command lives inside the project's
-> `.venv`, so run it with **`uv run vnote …`** (uv handles the venv for you), or
-> activate the venv first (`source .venv/bin/activate`) and then call `vnote`
-> directly. The `uv tool install` route above instead puts `vnote` on your PATH
-> globally, so no prefix is needed. The examples below use the bare `vnote` form.
+Common flags — run `vnote-flow --help` or see the
+[User Guide](docs/USER_GUIDE.md#vnote-flow--flow-mode-reference) for the full set:
 
-After installing, run `vnote --doctor` (or `uv run vnote --doctor`) to check your environment.
+- `--vad` — auto-stop after a short pause, so you don't press the hotkey twice
+- `--clean` — light LLM cleanup before pasting (default pastes the raw transcript)
+- `--hotkey COMBO` — change the trigger from `ctrl+shift+space`
+- `--once --print` — one hotkey-free capture to stdout; the easiest first test
 
-For **local** cleanup you also need [Ollama](https://ollama.com). vnote walks you
-through picking a model on first run (see below), or pull one yourself:
+### Always-on with a tray icon
+
+Run the client in the tray instead of a console — green *ready* / red *recording* /
+amber *processing*, with toggles for cleanup and VAD:
 
 ```bash
-ollama pull qwen2.5:14b-instruct   # default; ~10 GB VRAM. Lighter: qwen2.5:7b-instruct / llama3.2:3b
+vnote-flow --tray
 ```
 
-The first transcription downloads the Whisper model (~1.6 GB) to `~/.cache/huggingface`.
+To launch it automatically at login (and for the WSL2 setup where the daemon lives in
+WSL and `vnote-flow` runs on the **Windows** side), follow
+**[User Guide → Always-on setup](docs/USER_GUIDE.md#always-on-setup)** — it has the
+one-command Windows installer, the Linux systemd unit, and the WSL Task Scheduler recipe.
 
-> **Audio on WSL:** WSL has no native ALSA device, so recording goes through WSLg's
-> PulseAudio bridge via `parec`. Install it with `sudo apt install -y pulseaudio-utils`.
-> `pw-record`, `ffmpeg`, or the `sounddevice` library are used as fallbacks if present.
-
-## First run
-
-The first time you run `vnote` interactively, it asks two quick questions — which
-cleanup backend (local Ollama vs. cloud Claude) and, for Ollama, which model size
-(pre-selected from your detected GPU memory). Your choice is saved to
-`~/.config/vnote/config.json`. Delete that file to run setup again, or override
-anytime with a flag or a `VNOTE_*` environment variable. The prompt is skipped when
-input isn't a terminal, so scripts and pipelines are never blocked.
-
-## Use
-
-(From a clone, prefix these with `uv run` — e.g. `uv run vnote` — or activate the
-venv first. See [Install](#install).)
-
-```bash
-vnote                      # record from the mic; press Enter to stop
-vnote memo.m4a             # process an existing audio file
-vnote --light              # faithful cleanup (de-fill + grammar only)
-vnote --edit               # editorial cleanup — reorganize, headings, lists (default)
-vnote --summary            # condensed rewrite
-vnote --raw                # transcript only, no LLM
-vnote --backend claude     # use the Claude backend (needs the [claude] extra + key)
-vnote --no-clipboard       # don't touch the clipboard
-vnote --redo DIR           # re-run cleanup on a saved note (skips transcription)
-vnote --stdout             # also print the note to stdout (for piping)
-vnote -o, --open           # open the new note in $EDITOR afterward
-vnote --serve              # keep models warm in a localhost daemon (see below)
-vnote --no-daemon          # ignore a running daemon; load models in-process
-```
-
-You can dictate formatting instructions as you talk ("make that a bulleted list",
-"scratch that", "put a heading here") — the cleanup step follows them.
-
-`--redo` is handy for trying a different cleanup intensity without re-transcribing
-(transcription is the slow part) — e.g. `vnote --redo voice-notes/2026-… --summary`.
-
-### Warm daemon (optional, faster)
-
-Normally every run loads the Whisper model into VRAM first — several seconds
-before transcription even starts. Leave a daemon running and repeat runs skip
-that entirely:
-
-```bash
-vnote --serve              # terminal A: loads the model once, then serves on 127.0.0.1:8760
-vnote memo.m4a             # terminal B: detects the daemon and starts transcribing immediately
-```
-
-The CLI probes for a daemon on each run and silently falls back to in-process
-models when none is up, so nothing else changes — same output, same files.
-`--no-daemon` forces in-process for a single run, `vnote --doctor` shows whether
-a daemon is up, and `VNOTE_DAEMON_HOST` / `VNOTE_DAEMON_PORT` move the address.
-It binds to localhost only, with no auth — it's a single-user convenience, not a
-network service.
-
-### Flow mode — dictate into any app (experimental)
-
-`vnote-flow` is a thin push-to-talk client for the daemon: press
-**ctrl+shift+space** anywhere, speak, press it again — the transcript is pasted
-into whatever app has focus (clipboard-paste, with your old clipboard restored).
-
-```bash
-vnote --serve                        # somewhere: the warm daemon
-vnote-flow                           # hotkey loop (needs the [flow] extra: pynput)
-vnote-flow --vad                     # auto-stop after a ~1s pause (no second key press)
-vnote-flow --clean                   # fast LLM 'dictation' cleanup before pasting (default: raw)
-vnote-flow --stream                  # live partial text on the console while you speak
-vnote-flow --once --print            # one hotkey-free cycle to stdout (works anywhere)
-vnote-flow --inject type             # per-character typing instead of pasting
-```
-
-Spoken commands **"new line"**, **"new paragraph"** and **"scratch that"** are
-applied to the transcript by rule, even without `--clean`. With `--clean`, a
-light dictation prompt also fixes punctuation/fillers and handles the fuzzier
-commands ("period", "quote … unquote") — point `VNOTE_DICTATION_MODEL` at a
-small model (e.g. `llama3.2:3b`) to keep it fast.
-
-**Your words** (`~/.config/vnote/vocab.txt`, all transcription paths, no
-restart needed — see `vnote --config` for the path):
-
-```
-TRANSFORM              # bare line: bias transcription toward this spelling
-Dymola
-jason -> JSON          # correction: fix the transcript afterwards (whole-word)
-v note -> vnote
-```
-
-**Tone**: `vnote-flow --clean --tone casual` (any free text), or per-app via an
-`app_tones` map in `~/.config/vnote/config.json` matched against the focused
-window's title:
-
-```json
-{ "app_tones": { "slack": "casual", "outlook": "formal, concise" } }
-```
-
-Run it on the machine that owns the **keyboard and mic**:
-
-| Setup | Daemon | `vnote-flow` |
-|---|---|---|
-| Native Linux / Windows / macOS | same machine | same machine (`pip install 'vnote[flow]'`) |
-| **WSL2** | inside WSL (CUDA) | **Windows Python** — `pip install 'vnote[flow]'`; localhost reaches the WSL daemon out of the box |
-
-> If `vnote-flow` isn't on PATH after a Windows `pip install`, run it as
-> `py -m vnote.client.app` instead.
-
-Configure with `VNOTE_HOTKEY` (e.g. `ctrl+alt+d`) and `VNOTE_INJECT`
-(`auto`/`paste`/`type`). Caveats: a non-elevated client can't type into
-elevated/admin windows (Windows UIPI — fails silently); Wayland needs `wtype`
-or `ydotool` for injection. Flow mode is ephemeral by design — it doesn't write
-session folders; use `vnote` for notes you want to keep.
-
-### Dictation history
-
-Every flow take is saved by default — audio, raw transcript, and cleaned
-text — as an append-only daily log next to your batch notes:
-
-    voice-notes/flow/
-      2026-07-06.md               # one ## entry per take: raw, clean, audio link
-      audio/20260706-143207.wav
-
-`--no-history` (also a tray toggle) turns saving off for a session. Granular
-switches, all on by default: `VNOTE_HISTORY_AUDIO=0` keeps the text but drops
-the WAVs; `VNOTE_HISTORY_RAW=0` / `VNOTE_HISTORY_CLEAN=0` omit those fields.
-The daemon owns the files (they land in its `voice-notes/`); the client sends
-each take to `POST /history` best-effort — dictation never blocks on history.
-
-A take that turns out to be a real note can be **promoted** — rebuilt as its
-own dated-titled session folder, same layout as batch notes, with the WAV
-moved in and a pointer left under the take's timestamp in the daily log:
-
-    vnote --promote                    # the last take
-    vnote --promote 14:32:07           # that take, newest day
-    vnote --promote "2026-07-05 09:15:00"
-
-The tray menu's "Save last take as note" does the same with one click.
-
-### Always-on (optional)
-
-`vnote-flow --tray` swaps the console for a tray icon (green ready / red
-recording / amber processing) with toggles for cleanup and VAD — pair it with
-`pythonw` for a fully windowless client.
-
-- **Windows client:** `powershell -ExecutionPolicy Bypass -File
-  scripts\install-windows-client.ps1 -Startup` installs the `[flow]` extra and
-  drops a windowless startup shortcut (re-run it after every update).
-- **Daemon on native Linux:** `cp scripts/vnote-daemon.service
-  ~/.config/systemd/user/ && systemctl --user enable --now vnote-daemon`.
-- **Daemon in WSL at Windows logon:** Task Scheduler → new task, action
-  `wsl.exe -d <YourDistro> -- ~/.local/bin/vnote --serve`, trigger "At log on",
-  and tick "Hidden". (Or just leave a terminal running `vnote --serve`.)
-
-### Check & configure
-
-```bash
-vnote --doctor             # check recorder, GPU, clipboard, and backend — with fixes
-vnote --config             # show resolved settings and the config-file path
-vnote --setup              # re-run the interactive first-run setup
-```
-
-**No GPU?** Use `--backend claude` (cleanup runs in the cloud); transcription falls
-back to CPU automatically — slower, but it works.
+> **Which machine?** Run `vnote-flow` on the machine that owns the keyboard and mic.
+> On WSL2 that's **Windows** Python talking to the daemon inside WSL over `localhost` —
+> install the client with `py -m pip` or the installer script, **never `uv` from the
+> cloned repo** (it fights the Linux `.venv` WSL built). Full walkthrough:
+> [User Guide → Always-on setup](docs/USER_GUIDE.md#always-on-setup).
 
 ## Output
 
-Each run writes `voice-notes/YYYY-MM-DD-HHMM-<slug>/`:
+Each note run writes `voice-notes/YYYY-MM-DD-HHMM-<slug>/`:
 
 | file | what |
 |---|---|
 | `audio.wav` | the recording (or a copy of the file you passed) |
 | `transcript.txt` | raw Whisper output |
-| `note.md` | the cleaned, reorganized note — the thing you keep |
+| `note.md` | the cleaned note — the thing you keep (also copied to your clipboard) |
 | `meta.json` | model, durations, language, timestamps |
 
-`note.md` is also copied to your clipboard.
+Flow takes are logged separately under `voice-notes/flow/` and any one can be *promoted*
+into a full note folder. See the [User Guide](docs/USER_GUIDE.md#dictation-history).
 
-## Config (env vars)
+## Learn more
 
-Environment variables override the saved first-run choice. A `.env` in the current
-directory is auto-loaded (see `.env.example`).
-
-| var | default |
-|---|---|
-| `VNOTE_DIR` | `./voice-notes` |
-| `VNOTE_WHISPER_MODEL` | `large-v3-turbo` |
-| `VNOTE_BACKEND` | `ollama` |
-| `VNOTE_OLLAMA_MODEL` | `qwen2.5:14b-instruct` |
-| `VNOTE_CLAUDE_MODEL` | `claude-sonnet-4-6` |
-| `OLLAMA_HOST` | `http://127.0.0.1:11434` |
-| `VNOTE_DAEMON_HOST` | `127.0.0.1` |
-| `VNOTE_DAEMON_PORT` | `8760` |
-| `VNOTE_HOTKEY` | `ctrl+shift+space` (vnote-flow) |
-| `VNOTE_INJECT` | `auto` (vnote-flow: `paste`/`type`) |
-| `VNOTE_VAD` | off (vnote-flow: `1` = auto-stop on silence) |
-| `VNOTE_VAD_SILENCE` | `1.0` (seconds of pause that end an utterance) |
-| `VNOTE_STREAM` | off (vnote-flow: `1` = transcribe while speaking) |
-| `VNOTE_TRAY` | off (vnote-flow: `1` = system-tray icon) |
-| `VNOTE_HISTORY` | on (vnote-flow: `0` = don't save takes to `voice-notes/flow/`) |
-| `VNOTE_HISTORY_AUDIO` | on (vnote-flow: `0` = keep text, drop the WAVs) |
-| `VNOTE_HISTORY_RAW` | on (vnote-flow: `0` = omit raw transcripts) |
-| `VNOTE_HISTORY_CLEAN` | on (vnote-flow: `0` = omit cleaned text) |
-| `VNOTE_DICTATION_MODEL` | the `ollama_model` (small/fast model for `--clean` dictation) |
-| `VNOTE_VOCAB` | `~/.config/vnote/vocab.txt` (hotwords + corrections) |
-| `ANTHROPIC_API_KEY` | — (required for `--backend claude`) |
-
-## Development
-
-```bash
-uv pip install -e '.[dev]'   # pytest + ruff
-uv run pytest -q             # unit tests (pure logic; no GPU/mic/network)
-uv run ruff check vnote tests
-```
-
-The unit tests cover the testable core (transcript parsing, slugging, config
-resolution, first-run gating). The hardware paths — mic capture, GPU transcription,
-the Ollama/Claude calls — can't run in CI; smoke-test them manually with the bundled
-public-domain clip:
-
-```bash
-uv run vnote .testdata/jfk.flac
-```
+The **[User Guide](docs/USER_GUIDE.md)** covers everything this page leaves out: the full
+CLI and flow flag reference, the warm daemon, custom vocabulary, per-app tone, injection
+methods and their caveats, dictation history and promotion, always-on setup for every
+platform, the full environment-variable table, and development/testing.
 
 ## License
 
